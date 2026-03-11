@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Input } from "../components/Input";
-import { Button } from "../components/Button";
+import { Input } from "../components/ui/Input";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Card";
 import { login, register } from "../services/api";
 
 export function LoginPage() {
@@ -30,13 +31,21 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-          <h1 className="text-xl font-bold text-slate-800 mb-4">
-            {isRegister ? "Register" : "Sign in"}
-          </h1>
-          <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="min-h-screen flex items-center justify-center p-4 md:p-6">
+      <div className="relative w-full max-w-[420px] animate-fade-in">
+        <Card variant="glass" className="p-6 md:p-10">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-12 h-12 rounded-button bg-gradient-primary flex items-center justify-center mb-4 shadow-soft-glow">
+              <span className="text-white font-semibold text-lg">A</span>
+            </div>
+            <h1 className="text-xl font-semibold text-ds-text">
+              {isRegister ? "Create account" : "Welcome back"}
+            </h1>
+            <p className="text-[15px] text-ds-muted mt-1">
+              {isRegister ? "Sign up to get started" : "Sign in to continue"}
+            </p>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
             <Input
               label="Email"
               type="email"
@@ -55,7 +64,7 @@ export function LoginPage() {
               autoComplete={isRegister ? "new-password" : "current-password"}
             />
             {error && (
-              <p className="text-base text-red-600">{error}</p>
+              <p className="text-[15px] text-red-400">{error}</p>
             )}
             <Button type="submit" fullWidth disabled={loading}>
               {loading ? "Please wait…" : isRegister ? "Register" : "Sign in"}
@@ -64,11 +73,11 @@ export function LoginPage() {
           <button
             type="button"
             onClick={() => { setIsRegister((v) => !v); setError(null); }}
-            className="mt-4 text-base text-blue-600 hover:underline"
+            className="mt-6 text-[15px] text-ds-muted hover:text-blue-400 transition-colors duration-200 w-full text-center"
           >
             {isRegister ? "Already have an account? Sign in" : "Create an account"}
           </button>
-        </div>
+        </Card>
       </div>
     </div>
   );

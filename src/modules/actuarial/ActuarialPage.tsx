@@ -1,10 +1,21 @@
 import { useState } from "react";
-import { ActuarialForm } from "./ActuarialForm";
-import { ResultCard } from "./ResultCard";
+import { ActuarialWizard } from "./wizard/ActuarialWizard";
+import { LiveResultSummary } from "./LiveResultSummary";
+import { CaseMetadata } from "./CaseMetadata";
+import { ReportPreview } from "./ReportPreview";
+import { ValidationPanel } from "./ValidationPanel";
+import { YearlyActuarialTable } from "./YearlyActuarialTable";
+import { SgkPSDSection } from "./SGKPSDSection";
+import { WorkInjuryBreakdown } from "./WorkInjuryBreakdown";
+import { uiText } from "../../config/uiText";
+import type { CalculationType } from "./types/caseFormTypes";
 import {
   calculate,
+  runCalculation,
+  mapCalculationResultToPayload,
   saveCase,
   downloadReport,
+  downloadExpertReport,
   type ActuarialInputPayload,
   type ActuarialResultPayload,
 } from "../../services/api";
@@ -12,9 +23,11 @@ import {
 export function ActuarialPage() {
   const [result, setResult] = useState<ActuarialResultPayload | null>(null);
   const [lastInput, setLastInput] = useState<ActuarialInputPayload | null>(null);
+  const [lastCalculationType, setLastCalculationType] = useState<CalculationType | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingExpert, setDownloadingExpert] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = (input: ActuarialInputPayload) => {
@@ -26,9 +39,37 @@ export function ActuarialPage() {
         setLastInput(input);
       })
       .catch((err) => {
-        const msg = err.response?.data?.errors?.join?.(" ") ?? err.response?.data?.error ?? "Calculation failed";
+        const msg = err.response?.data?.errors?.join?.(" ") ?? err.response?.data?.error ?? uiText.errors.calculationFailed;
         setError(String(msg));
         setResult(null);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  const handleSubmitByType = (
+    type: CalculationType,
+    params: Record<string, unknown>
+  ): Promise<ActuarialResultPayload | null> => {
+    setError(null);
+    setLoading(true);
+    return runCalculation(type, params)
+      .then((res) => {
+        const metadata = {
+          interestRate: (params.discountRate as number) ?? 0.1,
+          wageIncreaseRate: (params.increaseRate as number) ?? 0.03,
+          disabilityRate: (params.maluliyetOrani as number) ?? 100,
+        };
+        const payload = mapCalculationResultToPayload(res.result, metadata);
+        setResult(payload);
+        setLastInput(null);
+        setLastCalculationType(type);
+        return payload;
+      })
+      .catch((err) => {
+        const msg = err.response?.data?.error ?? err.message ?? uiText.errors.calculationFailed;
+        setError(String(msg));
+        setResult(null);
+        return null;
       })
       .finally(() => setLoading(false));
   };
@@ -56,41 +97,107 @@ export function ActuarialPage() {
       .finally(() => setDownloading(false));
   };
 
+  const handleDownloadExpertReport = () => {
+    if (!result) return;
+    setError(null);
+    setDownloadingExpert(true);
+    const caseInfo = lastInput?.accidentDate
+      ? { olayTarihi: lastInput.accidentDate, kazaTuru: lastCalculationType ?? undefined }
+      : { kazaTuru: lastCalculationType ?? undefined };
+    downloadExpertReport({
+      result,
+      caseInfo: Object.keys(caseInfo).length ? caseInfo : undefined,
+      calculationType: lastCalculationType ?? undefined,
+    })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "bilirkişi-raporu.docx";
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(async (err) => {
+        const data = err.response?.data;
+        let message = err.message ?? "Bilirkişi raporu indirilemedi.";
+        if (data instanceof Blob) {
+          try {
+            const text = await data.text();
+            const json = JSON.parse(text);
+            if (typeof json?.error === "string") message = json.error;
+          } catch {
+            // ignore parse error
+          }
+        } else if (data?.error) {
+          message = data.error;
+        }
+        setError(message);
+      })
+      .finally(() => setDownloadingExpert(false));
+  };
+
   return (
-    <div className="min-h-screen bg-slate-100 pb-32 md:pb-8">
-      <div className="max-w-lg mx-auto px-4 py-6">
-        <h1 className="text-xl font-bold text-slate-800 mb-4">Actuarial calculation</h1>
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 p-4 mb-4">
-          <ActuarialForm onSubmit={handleSubmit} loading={loading} />
+    <div className="min-h-screen pb-[68px] md:pb-8">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-5 md:py-6">
+        <div className="space-y-5 md:space-y-6 animate-fade-in">
+          {/* Sonuç yokken wizard tam genişlik; sonuç varken 2 kolon (3+2) */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 md:gap-6">
+            <div className={result != null ? "lg:col-span-3 space-y-5" : "lg:col-span-5 space-y-5"}>
+              <ActuarialWizard
+                onSubmit={handleSubmit}
+                onSubmitByType={handleSubmitByType}
+                result={result}
+                loading={loading}
+                fullWidth={result == null}
+              />
+            </div>
+            <div className="lg:col-span-2">
+              {result != null && (
+                <div className="lg:h-fit">
+                  <LiveResultSummary result={result} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-[13px] text-red-600">
+              {error}
+            </div>
+          )}
+
+          {result && (
+            <div className="pt-5 md:pt-6 space-y-5 md:space-y-6">
+              <ValidationPanel input={lastInput} result={result} />
+              {result.yearlyActuarialTable && result.yearlyActuarialTable.length > 0 && (
+                <YearlyActuarialTable rows={result.yearlyActuarialTable} />
+              )}
+              {result.sgkPSD != null && result.sgkPSD > 0 && (
+                <SgkPSDSection
+                  sgkPSD={result.sgkPSD}
+                  sgkYearlyTable={result.sgkYearlyTable}
+                />
+              )}
+              {result.totalCompensation != null && (
+                <WorkInjuryBreakdown result={result} />
+              )}
+              <CaseMetadata result={result} />
+              <ReportPreview
+                result={result}
+                onSave={lastInput ? handleSave : undefined}
+                onExport={handleDownloadReport}
+                onExportExpert={handleDownloadExpertReport}
+                saving={saving}
+                exporting={downloading}
+                exportingExpert={downloadingExpert}
+              />
+            </div>
+          )}
         </div>
-        {error && (
-          <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-base text-red-700">
-            {error}
-          </div>
-        )}
-        {result && (
-          <div className="mb-4 md:mb-0">
-            <ResultCard
-              result={result}
-              onSave={lastInput ? handleSave : undefined}
-              onDownloadReport={handleDownloadReport}
-              saving={saving}
-              downloading={downloading}
-            />
-          </div>
-        )}
       </div>
-      {result && (
-        <div className="fixed bottom-0 left-0 right-0 md:relative md:max-w-lg md:mx-auto md:px-4 md:pb-4">
-          <div className="bg-slate-800 text-white p-4 shadow-lg md:rounded-xl md:mt-4">
-            <p className="text-base font-medium">Present capital value</p>
-            <p className="text-lg font-bold">{result.presentCapitalValue.toLocaleString()}</p>
-            <p className="text-sm text-slate-300 mt-1">
-              Monthly pension: {result.monthlyPension.toLocaleString()}
-            </p>
-          </div>
-        </div>
-      )}
+
+      {/* Mobile: wizard CTA is inline at step 5 */}
+      <div className="fixed bottom-0 left-0 right-0 md:hidden z-20 h-16 pointer-events-none" aria-hidden="true" />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Input } from "../../components/Input";
-import { Button } from "../../components/Button";
+import { Input } from "../../components/ui/Input";
+import { Select } from "../../components/ui/Select";
+import { Button } from "../../components/ui/Button";
 import type { ActuarialInputPayload } from "../../services/api";
 
 export interface ActuarialFormProps {
@@ -17,6 +18,17 @@ const initial: ActuarialInputPayload = {
   interestRate: 0,
   wageIncreaseRate: 0,
 };
+
+function InputCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-[14px] shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-6 transition-all duration-200 hover:shadow-[0_4px_16px_rgba(0,0,0,0.08)] focus-within:shadow-[0_0_0_2px_rgba(37,99,235,0.2)] mb-4">
+      <h3 className="text-[14px] font-medium text-gray-500 uppercase tracking-wider mb-4">
+        {title}
+      </h3>
+      <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
 
 export function ActuarialForm({ onSubmit, loading = false }: ActuarialFormProps) {
   const [birthDate, setBirthDate] = useState(initial.birthDate);
@@ -42,71 +54,77 @@ export function ActuarialForm({ onSubmit, loading = false }: ActuarialFormProps)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Input
-        label="Birth date"
-        type="date"
-        value={birthDate}
-        onChange={(e) => setBirthDate(e.target.value)}
-        required
-      />
-      <Input
-        label="Accident date"
-        type="date"
-        value={accidentDate}
-        onChange={(e) => setAccidentDate(e.target.value)}
-        required
-      />
-      <div>
-        <label className="block text-base font-medium text-slate-700 mb-1">Gender</label>
-        <select
-          className="w-full min-h-[44px] px-3 py-2 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+      <InputCard title="Kişisel Bilgiler">
+        <Input
+          label="Doğum Tarihi"
+          type="date"
+          value={birthDate}
+          onChange={(e) => setBirthDate(e.target.value)}
+          required
+        />
+        <Input
+          label="Olay Tarihi"
+          type="date"
+          value={accidentDate}
+          onChange={(e) => setAccidentDate(e.target.value)}
+          required
+        />
+        <Select
+          label="Cinsiyet"
           value={gender}
           onChange={(e) => setGender(e.target.value as "male" | "female")}
-        >
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-        </select>
+          options={[
+            { value: "male", label: "Erkek" },
+            { value: "female", label: "Kadın" },
+          ]}
+        />
+      </InputCard>
+      <InputCard title="Finansal Veriler">
+        <Input
+          label="Aylık Gelir"
+          type="number"
+          min={0}
+          step={0.01}
+          value={monthlyIncome}
+          onChange={(e) => setMonthlyIncome(e.target.value)}
+          required
+        />
+        <Input
+          label="Maluliyet Oranı (%)"
+          type="number"
+          min={0}
+          max={100}
+          step={0.1}
+          value={disabilityRate}
+          onChange={(e) => setDisabilityRate(e.target.value)}
+          required
+        />
+      </InputCard>
+      <InputCard title="Ekonomik Parametreler">
+        <Input
+          label="Faiz Oranı"
+          type="number"
+          min={0}
+          step={0.001}
+          value={interestRate}
+          onChange={(e) => setInterestRate(e.target.value)}
+          required
+        />
+        <Input
+          label="Ücret Artış Oranı"
+          type="number"
+          min={0}
+          step={0.001}
+          value={wageIncreaseRate}
+          onChange={(e) => setWageIncreaseRate(e.target.value)}
+          required
+        />
+      </InputCard>
+      <div className="hidden md:block">
+        <Button type="submit" fullWidth disabled={loading}>
+          {loading ? "Hesaplanıyor…" : "Hesapla"}
+        </Button>
       </div>
-      <Input
-        label="Monthly income"
-        type="number"
-        min={0}
-        step={0.01}
-        value={monthlyIncome}
-        onChange={(e) => setMonthlyIncome(e.target.value)}
-        required
-      />
-      <Input
-        label="Disability rate (%)"
-        type="number"
-        min={0}
-        max={100}
-        step={0.1}
-        value={disabilityRate}
-        onChange={(e) => setDisabilityRate(e.target.value)}
-        required
-      />
-      <Input
-        label="Interest rate (e.g. 0.05 for 5%)"
-        type="number"
-        min={0}
-        step={0.001}
-        value={interestRate}
-        onChange={(e) => setInterestRate(e.target.value)}
-        required
-      />
-      <Input
-        label="Wage increase rate (e.g. 0.03 for 3%)"
-        type="number"
-        min={0}
-        step={0.001}
-        value={wageIncreaseRate}
-        onChange={(e) => setWageIncreaseRate(e.target.value)}
-        required
-      />
-      <Button type="submit" fullWidth disabled={loading}>
-        {loading ? "Calculating…" : "Calculate"}
-      </Button>
     </form>
   );
 }

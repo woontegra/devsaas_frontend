@@ -1,6 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --bg-main: #0F172A;
+  --bg-card: #111827;
+  --bg-glass: rgba(255, 255, 255, 0.05);
+  --bg-input: #1F2937;
+  --primary-gradient: linear-gradient(135deg, #2563EB 0%, #7C3AED 100%);
+  --accent-gradient: linear-gradient(135deg, #3B82F6 0%, #9333EA 100%);
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --soft-glow: 0 0 30px rgba(59, 130, 246, 0.15);
+  --card-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  --radius-card: 16px;
+  --radius-input: 14px;
+  --radius-button: 14px;
+}
 
 html {
   font-size: 16px;
@@ -9,5 +28,38 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Light theme (default, App) */
+body {
+  background: #F8F9FB;
+  color: #1F2937;
+}
+
+/* Dark theme (Auth) */
+.bg-auth-dark {
+  background:
+    radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.15), transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(124, 58, 237, 0.15), transparent 40%),
+    #0F172A;
+}
+
+.dark {
+  background: transparent;
+  color: #F8FAFC;
+}
+
+.bg-app-light {
+  background: #F8F9FB;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
