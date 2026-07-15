@@ -29,21 +29,20 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
+  color: #334155;
 }
 
-/* Light theme (default, App) */
 body {
   background: #F8F9FB;
-  color: #1F2937;
 }
 
-/* Dark theme (Auth) */
 .bg-auth-dark {
   background:
-    radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.15), transparent 40%),
-    radial-gradient(circle at 80% 70%, rgba(124, 58, 237, 0.15), transparent 40%),
-    #0F172A;
+    radial-gradient(circle at 20% 30%, rgba(30, 64, 175, 0.25), transparent 42%),
+    radial-gradient(circle at 80% 70%, rgba(15, 23, 42, 0.55), transparent 45%),
+    #0B1F4A;
 }
 
 .dark {
@@ -53,6 +52,95 @@ body {
 
 .bg-app-light {
   background: #F8F9FB;
+}
+
+/* Ana çalışma alanı */
+.app-workspace {
+  width: calc(100vw - 48px);
+  max-width: 1680px;
+  min-width: 0;
+  margin-inline: auto;
+  padding-inline: 24px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px) {
+  .app-workspace {
+    width: 100%;
+    max-width: none;
+    padding-inline: 16px;
+  }
+}
+
+.wizard-desktop-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: 1fr;
+}
+
+.wizard-summary-aside {
+  display: none;
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .wizard-desktop-grid {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+  .wizard-summary-aside {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .wizard-summary-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+
+@media (min-width: 1280px) and (max-width: 1599px) {
+  .wizard-desktop-grid {
+    grid-template-columns: 270px minmax(0, 1fr) 310px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .wizard-desktop-grid {
+    grid-template-columns: 300px minmax(760px, 1fr) 350px;
+  }
+}
+
+/* Zarif buton sistemi */
+@layer components {
+  .btn-primary {
+    @apply rounded-[10px] bg-blue-900 text-white text-[13px] font-medium
+      hover:bg-blue-800 transition-colors
+      disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply rounded-[10px] bg-white border border-slate-200 text-slate-700 text-[13px] font-medium
+      hover:bg-slate-50 transition-colors
+      disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger {
+    @apply rounded-[10px] bg-white border border-red-200 text-red-600 text-[13px] font-medium
+      hover:bg-red-50 transition-colors;
+  }
+
+  .btn-ghost {
+    @apply rounded-[10px] bg-transparent text-slate-600 text-[13px] font-medium
+      hover:bg-slate-50 transition-colors;
+  }
+}
+
+.wizard-action-bar-inner {
+  min-height: 72px;
 }
 
 .animate-fade-in {

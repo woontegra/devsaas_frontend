@@ -25,8 +25,8 @@ export default {
         "app-border": "#E5E7EB",
       },
       backgroundImage: {
-        "gradient-primary": "linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)",
-        "gradient-accent": "linear-gradient(135deg, #3B82F6 0%, #9333EA 100%)",
+        "gradient-primary": "linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 100%)",
+        "gradient-accent": "linear-gradient(135deg, #1E40AF 0%, #2563EB 100%)",
       },
       boxShadow: {
         "soft-glow": "0 0 30px rgba(59, 130, 246, 0.15)",

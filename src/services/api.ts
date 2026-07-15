@@ -1,4 +1,8 @@
-import axios, { type AxiosInstance } from "axios";
+import axios, { type AxiosInstance, type AxiosError } from "axios";
+import type {
+  CalculationDraftInput,
+  CalculationValidateResponse,
+} from "../modules/actuarial/types/calculationDraft";
 
 const baseURL =
   import.meta.env.VITE_API_URL ??
@@ -15,13 +19,59 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export type ApiClientError = {
+  status: number;
+  message: string;
+  code?: string;
+  validation?: CalculationValidateResponse;
+};
+
+export function toApiClientError(err: unknown): ApiClientError {
+  const ax = err as AxiosError<Record<string, unknown>>;
+  const status = ax.response?.status ?? 0;
+  const data = ax.response?.data;
+
+  if (status === 401) {
+    return { status, message: "Oturum süresi doldu." };
+  }
+  if (status === 402) {
+    return {
+      status,
+      code: typeof data?.code === "string" ? data.code : "CALCULATION_ACCESS_REQUIRED",
+      message:
+        typeof data?.message === "string"
+          ? data.message
+          : "Hesaplama için ödeme veya kredi gerekiyor.",
+    };
+  }
+  if (status === 422 && data && typeof data === "object" && "errors" in data) {
+    return {
+      status,
+      message: typeof data.message === "string" ? data.message : "Veri doğrulama hataları.",
+      validation: data as unknown as CalculationValidateResponse,
+    };
+  }
+  if (status >= 500) {
+    return { status, message: "Sunucu hatası." };
+  }
+  if (typeof data?.error === "string") {
+    return { status, message: data.error };
+  }
+  if (typeof data?.message === "string") {
+    return { status, message: data.message };
+  }
+  return { status, message: ax.message || "İstek başarısız." };
+}
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-      window.location.href = "/login";
+      if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(err);
   }
@@ -38,6 +88,40 @@ export interface AuthResponse {
   user: { id: string; email: string };
   token: string;
 }
+
+export function login(payload: LoginPayload): Promise<AuthResponse> {
+  return api.post<AuthResponse>("/auth/login", payload).then((r) => r.data);
+}
+
+export function register(payload: RegisterPayload): Promise<AuthResponse> {
+  return api.post<AuthResponse>("/auth/register", payload).then((r) => r.data);
+}
+
+/** Aktif: yalnızca veri doğrulama — parasal sonuç yok */
+export function validateCalculationDraft(
+  draft: CalculationDraftInput
+): Promise<CalculationValidateResponse> {
+  return api
+    .post<CalculationValidateResponse>("/calculations/validate", draft)
+    .then((r) => r.data)
+    .catch((err) => {
+      const mapped = toApiClientError(err);
+      if (mapped.validation) return mapped.validation;
+      throw mapped;
+    });
+}
+
+/** Aktif: erişim yoksa 402 — motor çağrılmaz */
+export function requestCalculationRun(draft: CalculationDraftInput): Promise<never> {
+  return api.post("/calculations/run", draft).then(() => {
+    throw {
+      status: 501,
+      message: "Hesaplama motoru henüz bağlanmamıştır.",
+    } as ApiClientError;
+  });
+}
+
+// ─── Legacy tipler (aktif UI kullanmaz; derleme için dosyalar korunur) ───
 
 export interface ActuarialInputPayload {
   birthDate: string;
@@ -63,6 +147,15 @@ export interface YearlyActuarialTableRowPayload {
   cumulativePSD: number;
 }
 
+export interface SGKPSDYearlyRowPayload {
+  year: number;
+  age: number;
+  income: number;
+  discountFactor: number;
+  survivalProbability: number;
+  presentValue: number;
+}
+
 export interface ActuarialResultPayload {
   ageAtAccident: number;
   activePeriodYears: number;
@@ -86,10 +179,6 @@ export interface ActuarialResultPayload {
   totalCompensation?: number;
 }
 
-export interface CalculateResponse {
-  result: ActuarialResultPayload;
-}
-
 export type ValidationSeverity = "info" | "warning" | "error";
 
 export interface ValidationResultPayload {
@@ -104,150 +193,33 @@ export interface ValidateResponse {
   reportText: string;
 }
 
+/** @deprecated LEGACY — aktif UI kullanmaz */
 export function validate(
-  input: ActuarialInputPayload,
-  result: ActuarialResultPayload,
-  supportShares?: number[]
+  _input: ActuarialInputPayload,
+  _result: ActuarialResultPayload,
+  _supportShares?: number[]
 ): Promise<ValidateResponse> {
-  return api
-    .post<ValidateResponse>("/validate", { input, result, supportShares })
-    .then((r) => r.data);
+  return Promise.reject(new Error("Legacy validate endpoint is retired from active flow."));
 }
 
-export interface SaveCasePayload {
-  inputJson: ActuarialInputPayload;
-  resultJson: ActuarialResultPayload;
+/** @deprecated LEGACY — ENABLE_LEGACY_CALCULATION gerekir; aktif UI kullanmaz */
+export function legacyCalculate(input: ActuarialInputPayload): Promise<{ result: ActuarialResultPayload }> {
+  return api.post("/calculate", input).then((r) => r.data);
 }
 
-export interface CaseItem {
-  id: string;
-  inputJson: unknown;
-  resultJson: unknown;
-  createdAt: string;
+/** @deprecated LEGACY alias */
+export function calculate(input: ActuarialInputPayload): Promise<{ result: ActuarialResultPayload }> {
+  return legacyCalculate(input);
 }
 
-export interface CasesResponse {
-  cases: CaseItem[];
-}
-
-export function login(payload: LoginPayload): Promise<AuthResponse> {
-  return api.post<AuthResponse>("/auth/login", payload).then((r) => r.data);
-}
-
-export function register(payload: RegisterPayload): Promise<AuthResponse> {
-  return api.post<AuthResponse>("/auth/register", payload).then((r) => r.data);
-}
-
-export function calculate(input: ActuarialInputPayload): Promise<CalculateResponse> {
-  return api.post<CalculateResponse>("/calculate", input).then((r) => r.data);
-}
-
-/** SGK PSD yıllık satır */
-export interface SGKPSDYearlyRowPayload {
-  year: number;
-  age: number;
-  income: number;
-  discountFactor: number;
-  survivalProbability: number;
-  presentValue: number;
-}
-
-/** Hesap türüne göre motor (TRAFFIC_DEATH, TRAFFIC_INJURY, WORK_DEATH, WORK_INJURY) */
-export interface CalculationResultPayload {
-  totalPSD: number;
-  yearlyTable: {
-    rows: YearlyActuarialTableRowPayload[];
-    totalPSD: number;
-  };
-  activePeriodYears?: number;
-  passivePeriodYears?: number;
-  sgkPSD?: number;
-  sgkYearlyTable?: SGKPSDYearlyRowPayload[];
-  /** İş kazası yaralanma: geçici iş göremezlik zararı */
-  temporaryDisabilityAmount?: number;
-  /** İş kazası yaralanma: sürekli iş göremezlik */
-  permanentDisabilityAmount?: number;
-  /** İş kazası yaralanma: bakıcı gideri PSD */
-  caregiverCostAmount?: number;
-  /** İş kazası yaralanma: toplam tazminat */
-  totalCompensation?: number;
-}
-
-export interface RunCalculationResponse {
-  result: CalculationResultPayload;
-}
-
-export function runCalculation(
-  type: string,
-  params: Record<string, unknown>
-): Promise<RunCalculationResponse> {
-  return api
-    .post<RunCalculationResponse>("/calculations/run", { type, params })
-    .then((r) => r.data);
-}
-
-/** CalculationResultPayload → ActuarialResultPayload (mevcut UI ile uyum) */
-export function mapCalculationResultToPayload(
-  calc: CalculationResultPayload,
-  metadata: { interestRate: number; wageIncreaseRate: number; disabilityRate: number }
-): ActuarialResultPayload {
-  const activePV = calc.yearlyTable.rows
-    .filter((_, i) => (calc.activePeriodYears ?? 0) > i)
-    .reduce((s, r) => s + r.faultAdjustedValue, 0);
-  const passivePV = calc.totalPSD - activePV;
-  return {
-    ageAtAccident: calc.yearlyTable.rows[0]?.age ?? 0,
-    activePeriodYears: calc.activePeriodYears ?? 0,
-    passivePeriodYears: calc.passivePeriodYears ?? 0,
-    monthlyPension: 0,
-    discountFactor: 0,
-    presentCapitalValue: calc.totalCompensation ?? calc.totalPSD,
-    breakdown: { activePeriodPV: activePV, passivePeriodPV: passivePV },
-    metadata: {
-      ...metadata,
-      calculatedAt: new Date().toISOString(),
-    },
-    yearlyActuarialTable: calc.yearlyTable.rows,
-    sgkPSD: calc.sgkPSD,
-    sgkYearlyTable: calc.sgkYearlyTable,
-    temporaryDisabilityAmount: calc.temporaryDisabilityAmount,
-    permanentDisabilityAmount: calc.permanentDisabilityAmount,
-    caregiverCostAmount: calc.caregiverCostAmount,
-    totalCompensation: calc.totalCompensation,
-  };
-}
-
-export function saveCase(payload: SaveCasePayload): Promise<{ id: string; createdAt: string }> {
-  return api.post("/cases/save", payload).then((r) => r.data);
-}
-
-export function getCases(): Promise<CasesResponse> {
-  return api.get<CasesResponse>("/cases").then((r) => r.data);
-}
-
-export function downloadReport(resultJson: ActuarialResultPayload): Promise<Blob> {
+/** @deprecated LEGACY — ENABLE_LEGACY_REPORT gerekir; aktif UI kullanmaz */
+export function legacyDownloadReport(resultJson: ActuarialResultPayload): Promise<Blob> {
   return api
     .post("/report", { resultJson }, { responseType: "blob" })
     .then((r) => r.data as Blob);
 }
 
-export interface ExpertReportCaseInfo {
-  mahkemeAdi?: string;
-  mahkemeEsasNo?: string;
-  davaci?: string;
-  davali?: string;
-  bilirkiyi?: string;
-  meslek?: string;
-  olayTarihi?: string;
-  kazaTuru?: string;
-}
-
-export function downloadExpertReport(payload: {
-  result: ActuarialResultPayload;
-  caseInfo?: ExpertReportCaseInfo;
-  calculationType?: string;
-}): Promise<Blob> {
-  return api
-    .post("/report/expert", payload, { responseType: "blob" })
-    .then((r) => r.data as Blob);
+/** @deprecated LEGACY */
+export function downloadReport(resultJson: ActuarialResultPayload): Promise<Blob> {
+  return legacyDownloadReport(resultJson);
 }

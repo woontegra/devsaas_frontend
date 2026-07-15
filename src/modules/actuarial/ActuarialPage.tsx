@@ -1,203 +1,230 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CalculationTypeSelect } from "./CalculationTypeSelect";
 import { ActuarialWizard } from "./wizard/ActuarialWizard";
-import { LiveResultSummary } from "./LiveResultSummary";
-import { CaseMetadata } from "./CaseMetadata";
-import { ReportPreview } from "./ReportPreview";
-import { ValidationPanel } from "./ValidationPanel";
-import { YearlyActuarialTable } from "./YearlyActuarialTable";
-import { SgkPSDSection } from "./SGKPSDSection";
-import { WorkInjuryBreakdown } from "./WorkInjuryBreakdown";
-import { uiText } from "../../config/uiText";
-import type { CalculationType } from "./types/caseFormTypes";
 import {
-  calculate,
-  runCalculation,
-  mapCalculationResultToPayload,
-  saveCase,
-  downloadReport,
-  downloadExpertReport,
-  type ActuarialInputPayload,
-  type ActuarialResultPayload,
-} from "../../services/api";
+  createEmptyDraft,
+  type CalculationDraft,
+  type CalculationType,
+  type CalculationValidateResponse,
+  type ValidationIssue,
+} from "./types/calculationDraft";
+import {
+  clearDraftForType,
+  clearLegacyDraft,
+  detectLegacyDraft,
+  loadDraftForType,
+  saveDraftToSession,
+  type DraftSaveStatus,
+} from "./draftStorage";
+import { toApiClientError, validateCalculationDraft } from "../../services/api";
+import { getWizardSteps } from "./wizard/configs";
 
+export type { DraftSaveStatus } from "./draftStorage";
+
+/**
+ * Ana çalışma alanı — tür seçimi + türe özel wizard.
+ * Parasal sonuç yok. Legacy /calculate çağrılmaz.
+ */
 export function ActuarialPage() {
-  const [result, setResult] = useState<ActuarialResultPayload | null>(null);
-  const [lastInput, setLastInput] = useState<ActuarialInputPayload | null>(null);
-  const [lastCalculationType, setLastCalculationType] = useState<CalculationType | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadingExpert, setDownloadingExpert] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"select" | "wizard">("select");
+  const [draft, setDraft] = useState<CalculationDraft | null>(null);
+  const [stepId, setStepId] = useState("parties");
+  const [validation, setValidation] = useState<CalculationValidateResponse | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ValidationIssue[]>([]);
+  const [validating, setValidating] = useState(false);
+  const [apiMessage, setApiMessage] = useState<string | null>(null);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [legacyNotice, setLegacyNotice] = useState(() => detectLegacyDraft());
+  const skipNextAutoSave = useRef(false);
 
-  const handleSubmit = (input: ActuarialInputPayload) => {
-    setError(null);
-    setLoading(true);
-    calculate(input)
+  /* Debounced sessionStorage taslağı */
+  useEffect(() => {
+    if (!draft) return;
+    if (skipNextAutoSave.current) {
+      skipNextAutoSave.current = false;
+      return;
+    }
+    setDraftSaveStatus("saving");
+    const timer = window.setTimeout(() => {
+      try {
+        saveDraftToSession(draft);
+        const t = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+        setLastSavedAt(t);
+        setDraftSaveStatus("saved");
+      } catch {
+        setDraftSaveStatus("error");
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [draft]);
+
+  const startType = useCallback((type: CalculationType) => {
+    const loaded = loadDraftForType(type);
+    skipNextAutoSave.current = true;
+    if (loaded.ok) {
+      setDraft(loaded.draft);
+      setDraftSaveStatus("saved");
+    } else {
+      if (loaded.reason === "incompatible") {
+        setApiMessage(loaded.message);
+      }
+      setDraft(createEmptyDraft(type));
+      setDraftSaveStatus("idle");
+    }
+    const steps = getWizardSteps(type);
+    setStepId(steps[0]?.id ?? "parties");
+    setValidation(null);
+    setFieldErrors([]);
+    setPhase("wizard");
+  }, []);
+
+  const handleDraftChange = useCallback((next: CalculationDraft) => {
+    setDraft(next);
+    setValidation(null);
+    setFieldErrors([]);
+  }, []);
+
+  const handleValidate = useCallback(() => {
+    if (!draft) return;
+    setValidating(true);
+    setApiMessage(null);
+    setStepId("review");
+    validateCalculationDraft(draft)
       .then((res) => {
-        setResult(res.result);
-        setLastInput(input);
+        setValidation(res);
+        setFieldErrors(res.errors ?? []);
+        if (!res.valid) setApiMessage("Eksik veya hatalı alanlar var.");
       })
-      .catch((err) => {
-        const msg = err.response?.data?.errors?.join?.(" ") ?? err.response?.data?.error ?? uiText.errors.calculationFailed;
-        setError(String(msg));
-        setResult(null);
-      })
-      .finally(() => setLoading(false));
-  };
-
-  const handleSubmitByType = (
-    type: CalculationType,
-    params: Record<string, unknown>
-  ): Promise<ActuarialResultPayload | null> => {
-    setError(null);
-    setLoading(true);
-    return runCalculation(type, params)
-      .then((res) => {
-        const metadata = {
-          interestRate: (params.discountRate as number) ?? 0.1,
-          wageIncreaseRate: (params.increaseRate as number) ?? 0.03,
-          disabilityRate: (params.maluliyetOrani as number) ?? 100,
-        };
-        const payload = mapCalculationResultToPayload(res.result, metadata);
-        setResult(payload);
-        setLastInput(null);
-        setLastCalculationType(type);
-        return payload;
-      })
-      .catch((err) => {
-        const msg = err.response?.data?.error ?? err.message ?? uiText.errors.calculationFailed;
-        setError(String(msg));
-        setResult(null);
-        return null;
-      })
-      .finally(() => setLoading(false));
-  };
-
-  const handleSave = () => {
-    if (!result || !lastInput) return;
-    setSaving(true);
-    saveCase({ inputJson: lastInput, resultJson: result })
-      .then(() => setSaving(false))
-      .catch(() => setSaving(false));
-  };
-
-  const handleDownloadReport = () => {
-    if (!result) return;
-    setDownloading(true);
-    downloadReport(result)
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "actuarial-report.docx";
-        a.click();
-        URL.revokeObjectURL(url);
-      })
-      .finally(() => setDownloading(false));
-  };
-
-  const handleDownloadExpertReport = () => {
-    if (!result) return;
-    setError(null);
-    setDownloadingExpert(true);
-    const caseInfo = lastInput?.accidentDate
-      ? { olayTarihi: lastInput.accidentDate, kazaTuru: lastCalculationType ?? undefined }
-      : { kazaTuru: lastCalculationType ?? undefined };
-    downloadExpertReport({
-      result,
-      caseInfo: Object.keys(caseInfo).length ? caseInfo : undefined,
-      calculationType: lastCalculationType ?? undefined,
-    })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "bilirkişi-raporu.docx";
-        a.click();
-        URL.revokeObjectURL(url);
-      })
-      .catch(async (err) => {
-        const data = err.response?.data;
-        let message = err.message ?? "Bilirkişi raporu indirilemedi.";
-        if (data instanceof Blob) {
-          try {
-            const text = await data.text();
-            const json = JSON.parse(text);
-            if (typeof json?.error === "string") message = json.error;
-          } catch {
-            // ignore parse error
-          }
-        } else if (data?.error) {
-          message = data.error;
+      .catch((err: unknown) => {
+        const mapped = toApiClientError(err);
+        setApiMessage(mapped.message);
+        if (mapped.validation) {
+          setValidation(mapped.validation);
+          setFieldErrors(mapped.validation.errors ?? []);
         }
-        setError(message);
       })
-      .finally(() => setDownloadingExpert(false));
-  };
+      .finally(() => setValidating(false));
+  }, [draft]);
+
+  const handleSaveDraft = useCallback(() => {
+    if (!draft) return;
+    try {
+      saveDraftToSession(draft);
+      const t = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+      setLastSavedAt(t);
+      setDraftSaveStatus("saved");
+    } catch {
+      setDraftSaveStatus("error");
+    }
+  }, [draft]);
+
+  const handleClearDraft = useCallback(() => {
+    if (!draft) return;
+    if (!window.confirm("Taslak temizlensin mi?")) return;
+    clearDraftForType(draft.calculationType);
+    skipNextAutoSave.current = true;
+    setDraft(createEmptyDraft(draft.calculationType));
+    setDraftSaveStatus("idle");
+    setLastSavedAt(null);
+    setValidation(null);
+    setFieldErrors([]);
+    setStepId(getWizardSteps(draft.calculationType)[0]?.id ?? "parties");
+  }, [draft]);
+
+  const handleChangeTypeRequest = useCallback(() => {
+    if (
+      !window.confirm(
+        "Hesap türünü değiştirirseniz mevcut türe özel girdiğiniz bilgiler temizlenecektir. Devam etmek istiyor musunuz?"
+      )
+    ) {
+      return;
+    }
+    if (draft) clearDraftForType(draft.calculationType);
+    setDraft(null);
+    setValidation(null);
+    setFieldErrors([]);
+    setDraftSaveStatus("idle");
+    setPhase("select");
+  }, [draft]);
+
+  const handleNewFile = useCallback(() => {
+    if (draft) {
+      if (
+        !window.confirm(
+          "Yeni dosya başlatılsın mı? Mevcut türe ait oturum taslağı silinmez; seçim ekranına dönülür."
+        )
+      ) {
+        return;
+      }
+    }
+    setDraft(null);
+    setValidation(null);
+    setFieldErrors([]);
+    setDraftSaveStatus("idle");
+    setPhase("select");
+  }, [draft]);
+
+  const handleClearLegacy = useCallback(() => {
+    clearLegacyDraft();
+    setLegacyNotice(false);
+  }, []);
 
   return (
-    <div className="min-h-screen pb-[68px] md:pb-8">
-      <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-5 md:py-6">
-        <div className="space-y-5 md:space-y-6 animate-fade-in">
-          {/* Sonuç yokken wizard tam genişlik; sonuç varken 2 kolon (3+2) */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 md:gap-6">
-            <div className={result != null ? "lg:col-span-3 space-y-5" : "lg:col-span-5 space-y-5"}>
-              <ActuarialWizard
-                onSubmit={handleSubmit}
-                onSubmitByType={handleSubmitByType}
-                result={result}
-                loading={loading}
-                fullWidth={result == null}
-              />
+    <div className="bg-slate-100 pb-3">
+      <div className="app-workspace py-3 sm:py-5">
+        {legacyNotice && (
+          <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-[12px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-normal text-amber-950">
+            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 mt-0.5"
+                aria-hidden
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                </svg>
+              </span>
+              <p className="leading-snug">
+                Eski taslak yeni form yapısıyla uyumlu değil. Yeni bir taslak başlatmanız gerekiyor.
+              </p>
             </div>
-            <div className="lg:col-span-2">
-              {result != null && (
-                <div className="lg:h-fit">
-                  <LiveResultSummary result={result} />
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              className="shrink-0 self-stretch sm:self-center min-h-[40px] px-3 rounded-[10px] border border-amber-300 bg-white text-[13px] font-medium text-amber-900 hover:bg-amber-100"
+              onClick={handleClearLegacy}
+            >
+              Eski taslağı temizle
+            </button>
           </div>
+        )}
 
-          {error && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-[13px] text-red-600">
-              {error}
-            </div>
-          )}
+        {apiMessage && (
+          <div className="mb-3 rounded-[12px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-normal text-amber-900">
+            {apiMessage}
+          </div>
+        )}
 
-          {result && (
-            <div className="pt-5 md:pt-6 space-y-5 md:space-y-6">
-              <ValidationPanel input={lastInput} result={result} />
-              {result.yearlyActuarialTable && result.yearlyActuarialTable.length > 0 && (
-                <YearlyActuarialTable rows={result.yearlyActuarialTable} />
-              )}
-              {result.sgkPSD != null && result.sgkPSD > 0 && (
-                <SgkPSDSection
-                  sgkPSD={result.sgkPSD}
-                  sgkYearlyTable={result.sgkYearlyTable}
-                />
-              )}
-              {result.totalCompensation != null && (
-                <WorkInjuryBreakdown result={result} />
-              )}
-              <CaseMetadata result={result} />
-              <ReportPreview
-                result={result}
-                onSave={lastInput ? handleSave : undefined}
-                onExport={handleDownloadReport}
-                onExportExpert={handleDownloadExpertReport}
-                saving={saving}
-                exporting={downloading}
-                exportingExpert={downloadingExpert}
-              />
-            </div>
-          )}
-        </div>
+        {phase === "select" || !draft ? (
+          <CalculationTypeSelect onSelect={startType} />
+        ) : (
+          <ActuarialWizard
+            draft={draft}
+            onDraftChange={handleDraftChange}
+            stepId={stepId}
+            onStepChange={setStepId}
+            validation={validation}
+            fieldErrors={fieldErrors}
+            validating={validating}
+            onValidate={handleValidate}
+            onSaveDraft={handleSaveDraft}
+            onClearDraft={handleClearDraft}
+            draftSaveStatus={draftSaveStatus}
+            lastSavedAt={lastSavedAt}
+            onChangeTypeRequest={handleChangeTypeRequest}
+            onNewFile={handleNewFile}
+          />
+        )}
       </div>
-
-      {/* Mobile: wizard CTA is inline at step 5 */}
-      <div className="fixed bottom-0 left-0 right-0 md:hidden z-20 h-16 pointer-events-none" aria-hidden="true" />
     </div>
   );
 }

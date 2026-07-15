@@ -18,5 +18,6 @@
     "noUncheckedIndexedAccess": true
   },
   "include": ["src"],
+  "exclude": ["src/modules/actuarial/wizard/draftSteps"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

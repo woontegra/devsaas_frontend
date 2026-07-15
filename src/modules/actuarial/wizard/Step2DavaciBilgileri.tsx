@@ -11,8 +11,8 @@ import type { TrafficInjuryFormData, TrafficInjuryGender } from "../types/traffi
 const PASSIVE_AGE_MIN = 0;
 const PASSIVE_AGE_MAX = 99;
 
-/** İki tarih arasındaki yaş (tam yıl) */
-function getAgeInYears(birthDate: string, targetDate: string): number {
+/** İki tarih arasındaki yaş (tam yıl) — legacy helper, aktif akışta kullanılmıyor */
+function _getAgeInYears(birthDate: string, targetDate: string): number {
   if (!birthDate || !targetDate) return 0;
   const b = new Date(birthDate);
   const t = new Date(targetDate);
@@ -20,6 +20,7 @@ function getAgeInYears(birthDate: string, targetDate: string): number {
   if (t.getMonth() < b.getMonth() || (t.getMonth() === b.getMonth() && t.getDate() < b.getDate())) years -= 1;
   return Math.max(0, years);
 }
+void _getAgeInYears;
 
 /** Olay tarihindeki yaş: eventDate − birthDate → { year, month, day } (TRH için sadece year kullanılır) */
 function getEventAgeYmd(birthDate: string, eventDate: string): { year: number; month: number; day: number } {
