@@ -2,7 +2,7 @@ import { Outlet } from "react-router-dom";
 
 export function AuthLayout() {
   return (
-    <div className="dark min-h-screen bg-auth-dark">
+    <div className="min-h-screen bg-[#F4F7F7]">
       <Outlet />
     </div>
   );

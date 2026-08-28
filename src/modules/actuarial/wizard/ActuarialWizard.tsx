@@ -10,7 +10,12 @@ import type {
   CalculationValidateResponse,
   ValidationIssue,
 } from "../types/calculationDraft";
-import { CALCULATION_TYPE_DESCRIPTIONS, CALCULATION_TYPE_LABELS } from "../types/calculationDraft";
+import { CALCULATION_TYPE_LABELS } from "../types/calculationDraft";
+import type { TrafficInjuryCalculationResult } from "../types/trafficInjuryResult";
+import type {
+  CalculationReviewSummaryResponse,
+  ReviewFlowPhase,
+} from "../types/calculationReviewSummary";
 
 export interface ActuarialWizardProps {
   draft: CalculationDraft;
@@ -20,7 +25,18 @@ export interface ActuarialWizardProps {
   validation: CalculationValidateResponse | null;
   fieldErrors: ValidationIssue[];
   validating: boolean;
+  running: boolean;
+  runResult: TrafficInjuryCalculationResult | null;
+  runError: string | null;
+  reporting: boolean;
+  reportError: string | null;
+  reviewSummary: CalculationReviewSummaryResponse | null;
+  reviewSummaryLoading: boolean;
+  reviewSummaryError: string | null;
+  reviewFlowPhase: ReviewFlowPhase;
   onValidate: () => void;
+  onConfirmAndRun: () => void;
+  onDownloadWordReport: () => void;
   onSaveDraft: () => void;
   onClearDraft: () => void;
   draftSaveStatus: DraftSaveStatus;
@@ -45,18 +61,11 @@ function TypeSummary({ draft }: { draft: CalculationDraft }) {
       <>
         <p>Davacı: {name || "—"}</p>
         <p>Davalı: {defs.length}</p>
-        <p>Şoför: {drivers}</p>
-        <p>Araç sahibi: {owners}</p>
+        <p>Şoför: {drivers} · Araç sahibi: {owners}</p>
         <p>Sigorta şirketi: {insurers}</p>
         <p>Kaza tarihi: {draft.common.eventDate || "—"}</p>
         <p>Maluliyet %: {draft.disability.permanentDisabilityRate ?? "—"}</p>
         <p>Geçici İG dönemi: {draft.temporaryIncapacityPeriods.length}</p>
-        <p>
-          Masraf satırı:{" "}
-          {draft.hospitalExpenses.length +
-            draft.travelExpenses.length +
-            draft.caregiverExpenses.length}
-        </p>
       </>
     );
   }
@@ -113,7 +122,18 @@ export function ActuarialWizard({
   validation,
   fieldErrors,
   validating,
+  running,
+  runResult,
+  runError,
+  reporting,
+  reportError,
+  reviewSummary,
+  reviewSummaryLoading,
+  reviewSummaryError,
+  reviewFlowPhase,
   onValidate,
+  onConfirmAndRun,
+  onDownloadWordReport,
   onSaveDraft,
   onClearDraft,
   draftSaveStatus,
@@ -154,20 +174,14 @@ export function ActuarialWizard({
   const StepComponent = current?.Component;
 
   return (
-    <div className="pb-[88px] lg:pb-[100px]">
-      {/* Header — mobile compact / desktop fuller */}
-      <div className="mb-3 sm:mb-5 flex items-start justify-between gap-3">
+    <div className="pb-[88px] lg:pb-[80px]">
+      {/* ─── Header ───────────────────────────────────────────────── */}
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-slate-400 mb-1">
-            Veri girişi ve kontrol
-          </p>
-          <h1 className="text-[21px] sm:text-[24px] lg:text-[25px] font-semibold text-slate-800 tracking-tight leading-snug line-clamp-2">
-            {CALCULATION_TYPE_LABELS[draft.calculationType]} Hesabı
+          <h1 className="text-[20px] sm:text-[22px] font-semibold text-[#22313F] tracking-[-0.02em] leading-snug line-clamp-2">
+            {CALCULATION_TYPE_LABELS[draft.calculationType]}
           </h1>
-          <p className="mt-1.5 text-[13px] font-normal text-slate-500 leading-relaxed line-clamp-2 max-w-3xl hidden sm:block">
-            {CALCULATION_TYPE_DESCRIPTIONS[draft.calculationType]}
-          </p>
-          <p className="mt-1.5 sm:mt-2 text-[12px] font-normal text-slate-400">
+          <p className="mt-1 text-[12px] font-normal text-[#6B7280]">
             {draftStatusLabel(draftSaveStatus, lastSavedAt)}
           </p>
         </div>
@@ -180,7 +194,7 @@ export function ActuarialWizard({
                 {...buttonProps}
                 ref={buttonRef}
                 type="button"
-                className="min-h-[44px] min-w-[44px] rounded-[10px] border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:bg-slate-50"
+                className="min-h-[40px] min-w-[40px] rounded-[10px] border border-[#D9E5E3] bg-white text-[#6B7280] flex items-center justify-center hover:bg-[#EAF4F3]/50"
                 aria-label="İşlemler"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -193,39 +207,10 @@ export function ActuarialWizard({
           >
             {(close) => (
               <>
-                <MenuItem
-                  onClick={() => {
-                    close();
-                    onNewFile();
-                  }}
-                >
-                  Yeni dosya
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    close();
-                    onChangeTypeRequest();
-                  }}
-                >
-                  Hesap türünü değiştir
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    close();
-                    onSaveDraft();
-                  }}
-                >
-                  Taslağı kaydet
-                </MenuItem>
-                <MenuItem
-                  danger
-                  onClick={() => {
-                    close();
-                    onClearDraft();
-                  }}
-                >
-                  Taslağı temizle
-                </MenuItem>
+                <MenuItem onClick={() => { close(); onNewFile(); }}>Yeni dosya</MenuItem>
+                <MenuItem onClick={() => { close(); onChangeTypeRequest(); }}>Hesap türünü değiştir</MenuItem>
+                <MenuItem onClick={() => { close(); onSaveDraft(); }}>Taslağı kaydet</MenuItem>
+                <MenuItem danger onClick={() => { close(); onClearDraft(); }}>Taslağı temizle</MenuItem>
               </>
             )}
           </DropdownMenu>
@@ -233,19 +218,19 @@ export function ActuarialWizard({
 
         {/* Desktop toolbar */}
         <div className="hidden lg:flex flex-wrap gap-2 shrink-0">
-          <button type="button" onClick={onNewFile} className="btn-secondary min-h-[42px] px-4">
+          <button type="button" onClick={onNewFile} className="btn-secondary min-h-[40px] px-4">
             Yeni dosya
           </button>
-          <button type="button" onClick={onChangeTypeRequest} className="btn-secondary min-h-[42px] px-4">
+          <button type="button" onClick={onChangeTypeRequest} className="btn-secondary min-h-[40px] px-4">
             Hesap türünü değiştir
           </button>
-          <button type="button" onClick={onClearDraft} className="btn-danger min-h-[42px] px-4">
+          <button type="button" onClick={onClearDraft} className="btn-danger min-h-[40px] px-4">
             Taslağı temizle
           </button>
         </div>
       </div>
 
-      {/* Mobile step navigator — replaces left panel */}
+      {/* ─── Mobile step navigator ──────────────────────────────── */}
       <MobileStepNavigator
         steps={navSteps.map((s) => ({ id: s.id, title: s.title, sectionKey: s.sectionKey }))}
         stepId={stepId}
@@ -257,25 +242,18 @@ export function ActuarialWizard({
         onStepChange={onStepChange}
       />
 
-      {/* Mobile compact summary */}
-      <div className="lg:hidden mb-3 rounded-[14px] border border-slate-200/90 bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      {/* ─── Mobile compact summary ─────────────────────────────── */}
+      <div className="lg:hidden mb-3 rounded-[11px] border border-[#D9E5E3] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(15,95,99,0.04)]">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 text-[13px] font-normal text-slate-600 space-y-1">
-            <p>
-              <span className="text-slate-400">Tür · </span>
-              {CALCULATION_TYPE_LABELS[draft.calculationType]}
-            </p>
-            <p>
-              <span className="text-slate-400">Adım · </span>
-              {activeTitle}
-            </p>
-            <p className="text-[12px] text-slate-500">
-              Eksik: {missingTotal || "—"} · Uyarı: {warnTotal} · Hata: {errTotal}
+          <div className="min-w-0 text-[12.5px] font-normal text-[#22313F] space-y-0.5">
+            <p className="truncate">{activeTitle}</p>
+            <p className="text-[12px] text-[#6B7280]">
+              Eksik {missingTotal || "—"} · Uyarı {warnTotal} · Hata {errTotal}
             </p>
           </div>
           <button
             type="button"
-            className="shrink-0 text-[12px] font-medium text-blue-800 min-h-[36px] px-2"
+            className="shrink-0 text-[12.5px] font-medium text-[#0F5F63] min-h-[36px] px-2"
             aria-expanded={summaryOpen}
             onClick={() => setSummaryOpen((v) => !v)}
           >
@@ -292,19 +270,17 @@ export function ActuarialWizard({
             <SummaryCard title="Türe özel özet">
               <TypeSummary draft={draft} />
             </SummaryCard>
-            <SummaryCard title="Güvenlik bilgisi" variant="info">
-              <p>
-                Bu panel parasal sonuç içermez. Aktüeryal hesap, ödeme veya kredi doğrulandıktan sonra
-                sunucuda çalıştırılacaktır.
-              </p>
+            <SummaryCard title="Güvenlik" variant="info">
+              <p>Parasal sonuç bu panelde gösterilmez.</p>
             </SummaryCard>
           </div>
         )}
       </div>
 
+      {/* ─── 3-kolon grid ───────────────────────────────────────── */}
       <div className="wizard-desktop-grid">
         {/* Left steps — desktop only */}
-        <nav className="hidden lg:block lg:sticky lg:top-[4.5rem] self-start rounded-[16px] border border-slate-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] max-h-[calc(100vh-7rem)] overflow-y-auto">
+        <nav className="hidden lg:block lg:sticky lg:top-[4rem] self-start rounded-[11px] border border-[#D9E5E3] bg-white p-2 shadow-[0_1px_4px_rgba(15,95,99,0.05)] max-h-[calc(100vh-6rem)] overflow-y-auto">
           {navSteps.map((s, i) => {
             const active = s.id === stepId;
             const done = validation?.completedSections.includes(s.sectionKey);
@@ -312,32 +288,31 @@ export function ActuarialWizard({
             const errCount = fieldErrors.filter(
               (e) => e.field === s.sectionKey || e.field.startsWith(String(s.sectionKey))
             ).length;
-            let status = "Tamamlanmadı";
-            if (done) status = "Tamamlandı";
-            else if (missing || errCount) status = errCount ? `${errCount} eksik alan` : "Eksik bilgi";
-            else if (validation) status = "Kontrol gerekli";
+            let status = "Bekliyor";
+            if (done) status = "Tamam";
+            else if (missing || errCount) status = errCount ? `${errCount} eksik` : "Eksik";
 
             return (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => onStepChange(s.id)}
-                className={`w-full text-left rounded-[12px] px-3 py-2.5 mb-1 border transition-colors min-h-[52px] ${
+                className={`w-full text-left rounded-[9px] px-2.5 py-2 mb-0.5 border transition-colors duration-200 min-h-[44px] ${
                   active
-                    ? "bg-blue-800 text-white border-blue-800"
-                    : "bg-white border-transparent hover:bg-slate-50 text-slate-700"
+                    ? "bg-[#0F5F63] text-white border-[#0F5F63]"
+                    : "bg-white border-transparent hover:bg-[#EAF4F3]/60 text-[#22313F]"
                 }`}
               >
-                <div className="flex items-start gap-2.5">
+                <div className="flex items-start gap-2">
                   <span
-                    className={`mt-0.5 h-6 w-6 shrink-0 rounded-full text-[12px] font-medium flex items-center justify-center ${
+                    className={`mt-0.5 h-5 w-5 shrink-0 rounded-full text-[11px] font-medium flex items-center justify-center ${
                       active
                         ? "bg-white/20 text-white"
                         : done
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : missing || errCount
                             ? "bg-amber-50 text-amber-700"
-                            : "bg-slate-100 text-slate-500"
+                            : "bg-[#EAF4F3] text-[#6B7280]"
                     }`}
                   >
                     {done && !active ? "✓" : i + 1}
@@ -347,8 +322,8 @@ export function ActuarialWizard({
                       {s.title}
                     </p>
                     <p
-                      className={`text-[12px] font-normal mt-0.5 leading-snug ${
-                        active ? "text-blue-100/90" : done ? "text-emerald-600" : "text-slate-400"
+                      className={`text-[11.5px] font-normal mt-0.5 leading-snug ${
+                        active ? "text-white/80" : done ? "text-emerald-600" : "text-[#6B7280]"
                       }`}
                     >
                       {status}
@@ -361,13 +336,10 @@ export function ActuarialWizard({
         </nav>
 
         {/* Center form */}
-        <main className="min-w-0 space-y-3.5 sm:space-y-4">
-              {!isReview && current && (
-            <div className="mb-0.5 hidden lg:block">
-              <h2 className="text-[20px] font-semibold text-slate-800 tracking-tight">{current.title}</h2>
-              {current.description ? (
-                <p className="text-[13px] font-normal text-slate-500 mt-1">{current.description}</p>
-              ) : null}
+        <main className="min-w-0 space-y-4">
+          {!isReview && current && (
+            <div className="mb-1 hidden lg:block">
+              <h2 className="text-[16px] font-medium text-[#22313F] tracking-[-0.01em]">{current.title}</h2>
             </div>
           )}
           {isReview ? (
@@ -375,7 +347,18 @@ export function ActuarialWizard({
               draft={draft}
               validation={validation}
               validating={validating}
+              running={running}
+              runResult={runResult}
+              runError={runError}
+              reporting={reporting}
+              reportError={reportError}
+              reviewSummary={reviewSummary}
+              reviewSummaryLoading={reviewSummaryLoading}
+              reviewSummaryError={reviewSummaryError}
+              reviewFlowPhase={reviewFlowPhase}
               onValidate={onValidate}
+              onConfirmAndRun={onConfirmAndRun}
+              onDownloadWordReport={onDownloadWordReport}
               onGoToStep={onStepChange}
             />
           ) : StepComponent ? (
@@ -387,10 +370,10 @@ export function ActuarialWizard({
           ) : null}
 
           {fieldErrors.length > 0 && !isReview && (
-            <div className="rounded-[14px] border border-red-200 bg-red-50 p-4">
+            <div className="rounded-[12px] border border-red-200 bg-red-50 p-4">
               <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-red-700 mb-2">Hatalar</p>
               {fieldErrors.slice(0, 8).map((e, i) => (
-                <p key={i} className="text-[13px] font-normal text-red-800 leading-relaxed">
+                <p key={i} className="text-[14px] font-normal text-red-800 leading-relaxed">
                   {e.message}
                 </p>
               ))}
@@ -398,8 +381,8 @@ export function ActuarialWizard({
           )}
         </main>
 
-        {/* Right summary — desktop / tablet via CSS */}
-        <aside className="wizard-summary-aside lg:sticky lg:top-[4.5rem] self-start">
+        {/* Right summary */}
+        <aside className="wizard-summary-aside lg:sticky lg:top-[4rem] self-start">
           <SummaryCard title="Dosya özeti">
             <p>Tür: {CALCULATION_TYPE_LABELS[draft.calculationType]}</p>
             <p>Dosya: {draft.common.internalFileName || "—"}</p>
@@ -427,22 +410,17 @@ export function ActuarialWizard({
           <SummaryCard title="Türe özel özet">
             <TypeSummary draft={draft} />
           </SummaryCard>
-          <SummaryCard title="Güvenlik bilgisi" variant="info">
-            <p>
-              Bu panel parasal sonuç içermez. Aktüeryal hesap, ödeme veya kredi doğrulandıktan sonra
-              sunucuda çalıştırılacaktır.
-            </p>
+          <SummaryCard title="Güvenlik" variant="info">
+            <p>Parasal sonuç bu panelde gösterilmez.</p>
           </SummaryCard>
         </aside>
       </div>
 
-      {/* Mobile action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white lg:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="px-3 pt-2.5 pb-2.5">
-          <div className="flex items-center justify-between gap-2 mb-2 text-[12px] font-normal text-slate-500 tabular-nums">
-            <span>
-              {stepIndex + 1} / {allIds.length}
-            </span>
+      {/* ─── Mobile action bar ──────────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#D9E5E3] bg-white lg:hidden pb-[env(safe-area-inset-bottom)]">
+        <div className="px-4 pt-2.5 pb-2.5">
+          <div className="flex items-center justify-between gap-2 mb-2 text-[13px] font-normal text-slate-500 tabular-nums">
+            <span>{stepIndex + 1} / {allIds.length}</span>
             <span>%{progressPct}</span>
           </div>
           <ProgressBar value={progressPct} thin />
@@ -452,7 +430,6 @@ export function ActuarialWizard({
               onClick={goPrev}
               disabled={stepIndex === 0}
               className="btn-secondary min-h-[44px] px-4 shrink-0"
-              aria-label="Geri"
             >
               Geri
             </button>
@@ -467,34 +444,31 @@ export function ActuarialWizard({
             ) : (
               <button
                 type="button"
-                onClick={() => {
-                  onStepChange(reviewId);
-                  onValidate();
-                }}
-                disabled={validating}
+                onClick={() => { onStepChange(reviewId); onValidate(); }}
+                disabled={validating || running || reviewSummaryLoading}
                 className="btn-primary min-h-[44px] px-4 flex-1"
               >
-                {validating ? "Kontrol…" : "Verileri Kontrol Et"}
+                {validating ? "Kontrol…" : "Kontrol"}
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Desktop action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/90 bg-white hidden lg:block shadow-[0_-2px_12px_rgba(15,23,42,0.04)]">
+      {/* ─── Desktop action bar ─────────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#D9E5E3] bg-white hidden lg:block shadow-[0_-2px_10px_rgba(15,95,99,0.05)]">
         <div className="app-workspace wizard-action-bar-inner flex items-center gap-4 py-3">
-          <div className="flex flex-wrap gap-2 w-[260px]">
-            <button type="button" onClick={onSaveDraft} className="btn-secondary min-h-[42px] px-4">
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button type="button" onClick={onSaveDraft} className="btn-secondary min-h-[40px] px-4">
               Taslağı Kaydet
             </button>
-            <button type="button" onClick={onClearDraft} className="btn-danger min-h-[42px] px-4">
+            <button type="button" onClick={onClearDraft} className="btn-danger min-h-[40px] px-4">
               Taslağı Temizle
             </button>
           </div>
 
           <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0 px-1">
-            <div className="flex items-center gap-2 text-[13px] font-normal text-slate-600 tabular-nums">
+            <div className="flex items-center gap-2 text-[14px] font-normal text-slate-600 tabular-nums">
               <span className="font-medium text-slate-800">
                 {stepIndex + 1} / {allIds.length} adım
               </span>
@@ -506,41 +480,28 @@ export function ActuarialWizard({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 justify-end min-w-[300px]">
+          <div className="flex flex-wrap gap-2 justify-end shrink-0">
             <button
               type="button"
               onClick={goPrev}
               disabled={stepIndex === 0}
-              className="btn-secondary min-h-[42px] px-4"
+              className="btn-secondary min-h-[40px] px-4"
             >
               Önceki
             </button>
             {!isReview && (
-              <button type="button" onClick={goNext} className="btn-secondary min-h-[42px] px-4 bg-slate-800 text-white border-slate-800 hover:bg-slate-700">
+              <button type="button" onClick={goNext} className="btn-primary min-h-[40px] px-4">
                 Sonraki
               </button>
             )}
             <button
               type="button"
-              onClick={() => {
-                onStepChange(reviewId);
-                onValidate();
-              }}
-              disabled={validating}
-              className="btn-primary min-h-[42px] px-4"
+              onClick={() => { onStepChange(reviewId); onValidate(); }}
+              disabled={validating || reviewSummaryLoading}
+              className="btn-primary min-h-[40px] px-4"
             >
               {validating ? "Kontrol…" : "Verileri Kontrol Et"}
             </button>
-            {isReview && (
-              <button
-                type="button"
-                disabled
-                title="Ödeme sistemi sonraki aşamada bağlanacaktır"
-                className="min-h-[42px] px-4 rounded-[10px] bg-slate-200 text-slate-500 text-[13px] font-medium cursor-not-allowed"
-              >
-                Ödeme Yap ve Hesapla
-              </button>
-            )}
           </div>
         </div>
       </div>

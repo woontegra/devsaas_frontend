@@ -19,6 +19,7 @@ import type {
 import { newId } from "../../types/calculationDraft";
 import {
   AddRowButton,
+  DeleteIconButton,
   EmptyState,
   FormField,
   FormGrid,
@@ -27,6 +28,7 @@ import {
   TextInput,
   TextSelect,
   TextTextarea,
+  CurrencyInput,
 } from "../shared/FormPrimitives";
 import type { StepProps } from "../shared/wizardTypes";
 import { errorFor } from "../shared/wizardTypes";
@@ -203,27 +205,19 @@ export function IncomePeriodsStep({ draft, onChange, fieldErrors }: StepProps) {
                     </TextSelect>
                   </td>
                   <td className="px-2 py-2">
-                    <TextInput
-                      type="number"
-                      min={0}
-                      value={p.amount || ""}
-                      onChange={(e) =>
+                    <CurrencyInput
+                      value={p.amount || 0}
+                      onChange={(v) =>
                         setPeriods(
                           periods.map((x, idx) =>
-                            idx === i ? { ...x, amount: Number(e.target.value) || 0 } : x
+                            idx === i ? { ...x, amount: v } : x
                           )
                         )
                       }
                     />
                   </td>
                   <td className="px-2 py-2">
-                    <button
-                      type="button"
-                      className="text-red-600 text-xs font-medium"
-                      onClick={() => setPeriods(periods.filter((_, idx) => idx !== i))}
-                    >
-                      Sil
-                    </button>
+                    <DeleteIconButton onClick={() => setPeriods(periods.filter((_, idx) => idx !== i))} />
                   </td>
                 </tr>
               ))}
@@ -385,13 +379,7 @@ export function LiabilityStep({
                 />
               </FormField>
               <div className="flex items-end">
-                <button
-                  type="button"
-                  className="text-sm text-red-600"
-                  onClick={() => set({ ...liability, parties: parties.filter((_, idx) => idx !== i) })}
-                >
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set({ ...liability, parties: parties.filter((_, idx) => idx !== i) })} />
               </div>
             </div>
           ))}
@@ -518,9 +506,7 @@ export function TemporaryIncapacityStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <div className="flex items-end">
-                <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
               </div>
             </div>
           ))}
@@ -580,18 +566,15 @@ export function PriorPaymentsStep({ draft, onChange }: StepProps) {
                     />
                   </td>
                   <td className="p-2">
-                    <TextInput
-                      type="number"
-                      value={r.amount || ""}
-                      onChange={(e) =>
-                        set(rows.map((x, idx) => (idx === i ? { ...x, amount: Number(e.target.value) || 0 } : x)))
+                    <CurrencyInput
+                      value={r.amount || 0}
+                      onChange={(v) =>
+                        set(rows.map((x, idx) => (idx === i ? { ...x, amount: v } : x)))
                       }
                     />
                   </td>
                   <td className="p-2">
-                    <button type="button" className="text-red-600 text-xs" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                      Sil
-                    </button>
+                    <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
                   </td>
                 </tr>
               ))}
@@ -690,9 +673,7 @@ export function BeneficiariesStep({ draft, onChange, fieldErrors }: StepProps) {
                 />
               </FormField>
               <div className="flex items-end">
-                <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
               </div>
             </div>
           ))}
@@ -789,9 +770,7 @@ export function SupportRelationsStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <div className="flex items-end">
-                <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
               </div>
             </div>
           ))}
@@ -826,39 +805,27 @@ export function CareExpensesStep({ draft, onChange }: StepProps) {
           Sürekli bakıcı ihtiyacı
         </label>
         <FormField label="Aylık bakıcı gideri">
-          <TextInput
-            type="number"
-            value={block.monthlyCareCost ?? ""}
-            onChange={(e) =>
-              set({ ...block, monthlyCareCost: e.target.value === "" ? undefined : Number(e.target.value) })
-            }
+          <CurrencyInput
+            value={block.monthlyCareCost ?? 0}
+            onChange={(v) => set({ ...block, monthlyCareCost: v === 0 ? undefined : v })}
           />
         </FormField>
         <FormField label="Tedavi gideri">
-          <TextInput
-            type="number"
-            value={block.treatmentCost ?? ""}
-            onChange={(e) =>
-              set({ ...block, treatmentCost: e.target.value === "" ? undefined : Number(e.target.value) })
-            }
+          <CurrencyInput
+            value={block.treatmentCost ?? 0}
+            onChange={(v) => set({ ...block, treatmentCost: v === 0 ? undefined : v })}
           />
         </FormField>
         <FormField label="Hastane gideri">
-          <TextInput
-            type="number"
-            value={block.hospitalCost ?? ""}
-            onChange={(e) =>
-              set({ ...block, hospitalCost: e.target.value === "" ? undefined : Number(e.target.value) })
-            }
+          <CurrencyInput
+            value={block.hospitalCost ?? 0}
+            onChange={(v) => set({ ...block, hospitalCost: v === 0 ? undefined : v })}
           />
         </FormField>
         <FormField label="Protez/cihaz gideri">
-          <TextInput
-            type="number"
-            value={block.prosthesisCost ?? ""}
-            onChange={(e) =>
-              set({ ...block, prosthesisCost: e.target.value === "" ? undefined : Number(e.target.value) })
-            }
+          <CurrencyInput
+            value={block.prosthesisCost ?? 0}
+            onChange={(v) => set({ ...block, prosthesisCost: v === 0 ? undefined : v })}
           />
         </FormField>
       </FormGrid>
@@ -880,27 +847,20 @@ export function CareExpensesStep({ draft, onChange }: StepProps) {
             />
           </FormField>
           <FormField label="Tutar">
-            <TextInput
-              type="number"
-              value={o.amount || ""}
-              onChange={(e) =>
+            <CurrencyInput
+              value={o.amount || 0}
+              onChange={(v) =>
                 set({
                   ...block,
                   otherExpenses: others.map((x, idx) =>
-                    idx === i ? { ...x, amount: Number(e.target.value) || 0 } : x
+                    idx === i ? { ...x, amount: v } : x
                   ),
                 })
               }
             />
           </FormField>
           <div className="flex items-end">
-            <button
-              type="button"
-              className="text-sm text-red-600"
-              onClick={() => set({ ...block, otherExpenses: others.filter((_, idx) => idx !== i) })}
-            >
-              Sil
-            </button>
+            <DeleteIconButton onClick={() => set({ ...block, otherExpenses: others.filter((_, idx) => idx !== i) })} />
           </div>
         </div>
       ))}
@@ -985,13 +945,12 @@ export function CapitalValueDocsStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <FormField label="İlk peşin sermaye değeri tutarı">
-                <TextInput
-                  type="number"
-                  value={d.amount ?? ""}
-                  onChange={(e) =>
+                <CurrencyInput
+                  value={d.amount ?? 0}
+                  onChange={(v) =>
                     set(
                       rows.map((x, idx) =>
-                        idx === i ? { ...x, amount: e.target.value === "" ? undefined : Number(e.target.value) } : x
+                        idx === i ? { ...x, amount: v === 0 ? undefined : v } : x
                       )
                     )
                   }
@@ -1025,9 +984,7 @@ export function CapitalValueDocsStep({ draft, onChange }: StepProps) {
                 Rücuya tabi olduğu belirtilmiş
               </label>
               <div className="flex items-end">
-                <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
               </div>
             </div>
           ))}
@@ -1064,14 +1021,13 @@ export function SgkIncomeStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <FormField label="Aylık tutar">
-                <TextInput
-                  type="number"
-                  value={r.monthlyAmount ?? ""}
-                  onChange={(e) =>
+                <CurrencyInput
+                  value={r.monthlyAmount ?? 0}
+                  onChange={(v) =>
                     set(
                       rows.map((x, idx) =>
                         idx === i
-                          ? { ...x, monthlyAmount: e.target.value === "" ? undefined : Number(e.target.value) }
+                          ? { ...x, monthlyAmount: v === 0 ? undefined : v }
                           : x
                       )
                     )
@@ -1085,9 +1041,7 @@ export function SgkIncomeStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <div className="flex items-end">
-                <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
               </div>
             </div>
           ))}
@@ -1137,14 +1091,13 @@ export function SgkDeathIncomeStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <FormField label="Aylık tutar">
-                <TextInput
-                  type="number"
-                  value={r.monthlyAmount ?? ""}
-                  onChange={(e) =>
+                <CurrencyInput
+                  value={r.monthlyAmount ?? 0}
+                  onChange={(v) =>
                     set(
                       rows.map((x, idx) =>
                         idx === i
-                          ? { ...x, monthlyAmount: e.target.value === "" ? undefined : Number(e.target.value) }
+                          ? { ...x, monthlyAmount: v === 0 ? undefined : v }
                           : x
                       )
                     )
@@ -1152,9 +1105,7 @@ export function SgkDeathIncomeStep({ draft, onChange }: StepProps) {
                 />
               </FormField>
               <div className="flex items-end">
-                <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                  Sil
-                </button>
+                <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
               </div>
             </div>
           ))}
@@ -1182,18 +1133,15 @@ export function GenericExpensesStep({ draft, onChange }: StepProps) {
               />
             </FormField>
             <FormField label="Tutar">
-              <TextInput
-                type="number"
-                value={r.amount || ""}
-                onChange={(e) =>
-                  set(rows.map((x, idx) => (idx === i ? { ...x, amount: Number(e.target.value) || 0 } : x)))
+              <CurrencyInput
+                value={r.amount || 0}
+                onChange={(v) =>
+                  set(rows.map((x, idx) => (idx === i ? { ...x, amount: v } : x)))
                 }
               />
             </FormField>
             <div className="flex items-end">
-              <button type="button" className="text-sm text-red-600" onClick={() => set(rows.filter((_, idx) => idx !== i))}>
-                Sil
-              </button>
+              <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
             </div>
           </div>
         ))
@@ -1209,45 +1157,42 @@ export function DeathExpensesStep({ draft, onChange }: StepProps) {
     <FormSection title="Ölüm öncesi ve cenaze giderleri">
       <FormGrid>
         <FormField label="Ölüm öncesi tedavi gideri">
-          <TextInput
-            type="number"
-            value={block.preDeathTreatment ?? ""}
-            onChange={(e) =>
+          <CurrencyInput
+            value={block.preDeathTreatment ?? 0}
+            onChange={(v) =>
               onChange({
                 ...draft,
                 deathExpenses: {
                   ...block,
-                  preDeathTreatment: e.target.value === "" ? undefined : Number(e.target.value),
+                  preDeathTreatment: v === 0 ? undefined : v,
                 },
               })
             }
           />
         </FormField>
         <FormField label="Cenaze gideri">
-          <TextInput
-            type="number"
-            value={block.funeralCost ?? ""}
-            onChange={(e) =>
+          <CurrencyInput
+            value={block.funeralCost ?? 0}
+            onChange={(v) =>
               onChange({
                 ...draft,
                 deathExpenses: {
                   ...block,
-                  funeralCost: e.target.value === "" ? undefined : Number(e.target.value),
+                  funeralCost: v === 0 ? undefined : v,
                 },
               })
             }
           />
         </FormField>
         <FormField label="Nakil gideri">
-          <TextInput
-            type="number"
-            value={block.transportCost ?? ""}
-            onChange={(e) =>
+          <CurrencyInput
+            value={block.transportCost ?? 0}
+            onChange={(v) =>
               onChange({
                 ...draft,
                 deathExpenses: {
                   ...block,
-                  transportCost: e.target.value === "" ? undefined : Number(e.target.value),
+                  transportCost: v === 0 ? undefined : v,
                 },
               })
             }

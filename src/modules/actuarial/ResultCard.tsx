@@ -21,7 +21,8 @@ export interface ResultCardProps {
   downloading?: boolean;
 }
 
-const formatCurrency = (n: number) => n.toLocaleString("tr-TR");
+import { formatTRY } from "./wizard/shared/FormPrimitives";
+const formatCurrency = formatTRY;
 const LIGHT_PRIMARY = "#1E3A8A";
 const LIGHT_ACCENT = "#2563EB";
 const BAR_COLORS = ["#1E3A8A", "#2563EB"];

@@ -179,9 +179,13 @@ export interface AverageIncomeSource {
   netAmount?: number;
 }
 
+export type IncomeMode = "minWage" | "fixed" | "average";
+
 export interface AccidentIncomeBlock {
+  incomeMode: IncomeMode;
   fixedAmount: number | null;
-  useAverage: boolean;
+  /** @deprecated — incomeMode kullanılıyor. Eski taslak uyumluluğu için korunuyor. */
+  useAverage?: boolean;
   averageSources: AverageIncomeSource[];
   /** Modaldan "Uygula" ile hesaplanan ortalama net gelir */
   averageNetResult?: number;
@@ -286,6 +290,51 @@ export interface CapitalValueDocument {
   notes?: string;
 }
 
+/** Garame satırının bağlandığı dosya içi kişi kaydı */
+export type InsuranceGarameSubjectRef = "plaintiff";
+
+/**
+ * Garame dağılımı — tek yaralı/hak sahibi satırı.
+ *
+ * Kullanıcı girdisi: subjectRef veya externalPersonLabel (ikisi birlikte değil).
+ * Kişi adı, maluliyet ve kusur subjectRef üzerinden dosyadan okunur; ayrıca saklanmaz.
+ *
+ * Motor çıktıları (claimAmount … payableAfterPersonLimit): tazminat/garame motoru doldurur.
+ */
+export interface InsuranceGarameEntry {
+  id: string;
+  /** Dosyadaki kişi kaydına referans — maluliyet/kusur/ad buradan çözülür */
+  subjectRef?: InsuranceGarameSubjectRef;
+  /** Dosya dışı kaza mağduru tanımı — yalnızca subjectRef yokken; motor için asgari manuel tanım */
+  externalPersonLabel?: string;
+  /** Hesaplanan zarar / talep tutarı — motor çıktısı */
+  claimAmount?: number;
+  /** Garameye esas tutar — motor çıktısı */
+  garameBasisAmount?: number;
+  /** Garame oranı (0–1) — motor: garameBasisAmount / toplam garameye esas */
+  garameRatio?: number;
+  /** Kaza başı limitten düşen pay — motor çıktısı */
+  accidentLimitShare?: number;
+  /** Kişi başı limit sonrası ödenebilir tutar — motor çıktısı */
+  payableAfterPersonLimit?: number;
+}
+
+export interface InsurancePaymentRecord {
+  id: string;
+  paymentDate: string;
+  paymentAmount: number;
+  /** Kişi başı limit (TL) */
+  liabilityLimit: number;
+  /** Kaza başı limit (TL) */
+  accidentLimit?: number;
+  /** parties.defendants[].id — ilgili sigorta davalısına referans (ZMTS/Kasko) */
+  defendantId?: string;
+  /** Garame dağılım satırları — ZMTS/Kasko birbirinden bağımsız */
+  garameEntries?: InsuranceGarameEntry[];
+  /** Garame hesabı bu ödeme kaydı için uygulanacak mı (varsayılan: kapalı) */
+  garameEnabled?: boolean;
+}
+
 export interface CareExpensesBlock {
   temporaryCaregiver?: boolean;
   permanentCaregiver?: boolean;
@@ -315,6 +364,16 @@ export interface TrafficInjuryDraft extends DraftBase {
   caregiverExpenses: CaregiverExpenseRow[];
   /** Pasif devre başlangıç yaşı (varsayılan 60) */
   passivePhaseAge?: number;
+  /** İşlemiş dönem başlangıcı (varsayılan: common.eventDate) */
+  processedPeriodStartDate?: string;
+  /** İşlemiş dönem bitişi (varsayılan: common.calculationDate) */
+  processedPeriodEndDate?: string;
+  /** Peşin sermaye değeri belgeleri */
+  capitalValueDocuments: CapitalValueDocument[];
+  /** ZMTS ödemeleri */
+  zmtsPayments: InsurancePaymentRecord[];
+  /** Kasko ödemeleri */
+  cascoPayments: InsurancePaymentRecord[];
 }
 
 export interface TrafficDeathDraft extends DraftBase {
@@ -435,10 +494,13 @@ export function createEmptyDraft(type: CalculationType): CalculationDraft {
         liability: emptyLiability(),
         disability: {},
         temporaryIncapacityPeriods: [],
-        accidentIncome: { fixedAmount: null, useAverage: false, averageSources: [] },
+        accidentIncome: { incomeMode: "minWage", fixedAmount: null, averageSources: [] },
         hospitalExpenses: [],
         travelExpenses: [],
         caregiverExpenses: [],
+        capitalValueDocuments: [],
+        zmtsPayments: [],
+        cascoPayments: [],
       };
     case "TRAFFIC_DEATH":
       return {

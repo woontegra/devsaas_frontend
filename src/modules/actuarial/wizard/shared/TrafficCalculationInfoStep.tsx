@@ -7,19 +7,25 @@ import type {
   CaregiverExpenseRow,
   DefendantType,
   ExpenseItem,
+  IncomeMode,
   LiableParty,
   TemporaryIncapacityPeriod,
   TrafficInjuryDraft,
 } from "../../types/calculationDraft";
 import { newId } from "../../types/calculationDraft";
 import { computeMonthlyNet } from "../../utils/grossToNet";
+import { actuarialDays360Inclusive } from "../../utils/actuarialDayCount360";
+import { getNetMinWageForDate } from "../../../../data/netMinWage";
 import {
   AddRowButton,
+  CurrencyInput,
+  DeleteIconButton,
   FormField,
   FormSection,
   TextInput,
   TextSelect,
   WarningAlert,
+  formatTRY,
 } from "./FormPrimitives";
 import type { StepProps } from "./wizardTypes";
 import { errorFor } from "./wizardTypes";
@@ -50,10 +56,8 @@ function asTraffic(draft: CalculationDraft): TrafficInjuryDraft | null {
 
 function inclusiveDayCount(start: string, end: string): number | undefined {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return undefined;
-  const a = new Date(`${start}T00:00:00.000Z`).getTime();
-  const b = new Date(`${end}T00:00:00.000Z`).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return undefined;
-  return Math.round((b - a) / 86400000) + 1;
+  const days = actuarialDays360Inclusive(start, end);
+  return days > 0 ? days : undefined;
 }
 
 function emptyExpense(): ExpenseItem {
@@ -75,9 +79,7 @@ function parseEventYearMonth(eventDate: string): [number, number] {
   return [now.getFullYear(), now.getMonth() + 1];
 }
 
-function formatCurrency(v: number): string {
-  return v.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const formatCurrency = formatTRY;
 
 function syncLiabilityParties(draft: TrafficInjuryDraft): TrafficInjuryDraft {
   const types = [...new Set(draft.parties.defendants.map((d) => d.type))];
@@ -166,8 +168,28 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
 
   const patch = (next: TrafficInjuryDraft) => onChange(next);
 
-  const setCommonEvent = (eventDate: string) =>
-    patch({ ...ti, common: { ...ti.common, eventDate } });
+  const setCommonEvent = (eventDate: string) => {
+    let calculationDate = ti.common.calculationDate;
+    if (calculationDate && eventDate && calculationDate < eventDate) {
+      calculationDate = eventDate;
+    }
+    patch({ ...ti, common: { ...ti.common, eventDate, calculationDate } });
+  };
+
+  const setCalculationDate = (calculationDate: string) => {
+    patch({ ...ti, common: { ...ti.common, calculationDate } });
+  };
+
+  const processedStart = ti.processedPeriodStartDate ?? ti.common.eventDate;
+  const processedEnd = ti.processedPeriodEndDate ?? ti.common.calculationDate;
+
+  const setProcessedStart = (processedPeriodStartDate: string) => {
+    patch({ ...ti, processedPeriodStartDate: processedPeriodStartDate || undefined });
+  };
+
+  const setProcessedEnd = (processedPeriodEndDate: string) => {
+    patch({ ...ti, processedPeriodEndDate: processedPeriodEndDate || undefined });
+  };
 
   const plaintiffName = [ti.parties.plaintiff.firstName, ti.parties.plaintiff.lastName]
     .filter(Boolean)
@@ -222,99 +244,113 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
   const travel = ti.travelExpenses;
   const caregivers = ti.caregiverExpenses;
 
+  /* Hastane raporları: en az 1 boş dönem */
+  useEffect(() => {
+    if (ti.temporaryIncapacityPeriods.length === 0) {
+      setTemps([emptyTemp()]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <div className="space-y-4">
-      {/* ── Kaza Tarihi ── */}
-      <FormSection title="Kaza Tarihi">
-        <FormField label="Kaza tarihi" required error={errorFor(fieldErrors, "common.eventDate")}>
-          <TextInput
-            type="date"
-            value={ti.common.eventDate}
-            onChange={(e) => setCommonEvent(e.target.value)}
-          />
-        </FormField>
-      </FormSection>
-
-      {/* ── Kusur Oranları ── */}
-      <FormSection title="Kusur Oranları">
-        <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-            <p className="flex-1 text-[14px] font-medium text-slate-800">
-              Davacı{plaintiffName ? ` — ${plaintiffName}` : ""}
-            </p>
-            <div className="flex items-center gap-2 w-full sm:w-40">
+    <div className="space-y-3">
+      {/* Sol / sağ bağımsız kolonlar; masraflar altta tam genişlik */}
+      <div className="calc-info-columns">
+        <div className="calc-info-column">
+        <FormSection title="Kaza ve Hesap Tarihleri">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="Kaza tarihi" required error={errorFor(fieldErrors, "common.eventDate")}>
               <TextInput
-                type="number"
-                min={0}
-                max={100}
-                inputMode="decimal"
-                value={plaintiffFault}
-                onChange={(e) => setPlaintiffFault(Number(e.target.value))}
+                type="date"
+                value={ti.common.eventDate}
+                onChange={(e) => setCommonEvent(e.target.value)}
               />
-              <span className="text-[13px] text-slate-500">%</span>
-            </div>
+            </FormField>
+            <FormField label="Hesap tarihi" required error={errorFor(fieldErrors, "common.calculationDate")}>
+              <TextInput
+                type="date"
+                min={ti.common.eventDate || undefined}
+                value={ti.common.calculationDate}
+                onChange={(e) => setCalculationDate(e.target.value)}
+              />
+            </FormField>
           </div>
+        </FormSection>
 
-          {ti.liability.parties.length === 0 && (
-            <p className="text-[13px] text-slate-500">
-              İlk adımda davalı türü seçildiğinde burada listelenir.
+        <FormSection title="İşlemiş Dönem">
+          <p className="text-[12px] font-normal text-[#6B7280] mb-2">
+            Boş bırakılırsa başlangıç kaza tarihi, bitiş hesap tarihi kullanılır.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField
+              label="İşlemiş dönem başlangıcı"
+              error={errorFor(fieldErrors, "processedPeriodStartDate")}
+            >
+              <TextInput
+                type="date"
+                min={ti.common.eventDate || undefined}
+                max={processedEnd || ti.common.calculationDate || undefined}
+                value={ti.processedPeriodStartDate ?? ""}
+                onChange={(e) => setProcessedStart(e.target.value)}
+              />
+            </FormField>
+            <FormField
+              label="İşlemiş dönem bitişi"
+              error={errorFor(fieldErrors, "processedPeriodEndDate")}
+            >
+              <TextInput
+                type="date"
+                min={processedStart || ti.common.eventDate || undefined}
+                max={ti.common.calculationDate || undefined}
+                value={ti.processedPeriodEndDate ?? ""}
+                onChange={(e) => setProcessedEnd(e.target.value)}
+              />
+            </FormField>
+          </div>
+          {(ti.processedPeriodStartDate || ti.processedPeriodEndDate) && (
+            <p className="text-[11.5px] text-[#6B7280] mt-2 tabular-nums">
+              Etkin aralık: {processedStart || "—"} → {processedEnd || "—"}
             </p>
           )}
+        </FormSection>
 
-          {ti.liability.parties.map((p) => (
-            <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <p className="flex-1 text-[14px] font-medium text-slate-800">{p.name}</p>
-              <div className="flex items-center gap-2 w-full sm:w-40">
-                <TextInput
-                  type="number"
-                  min={0}
-                  max={100}
-                  inputMode="decimal"
-                  value={p.faultRatio}
-                  onChange={(e) => setDefendantFault(p.id, Number(e.target.value))}
-                />
-                <span className="text-[13px] text-slate-500">%</span>
-              </div>
+        <FormSection title="Hastane Raporları">
+          <p className="text-[13px] font-medium text-slate-700 mb-1.5">Geçici İş Göremezlik</p>
+
+          {/* Başlık satırı — sadece masaüstünde */}
+          {ti.temporaryIncapacityPeriods.length > 0 && (
+            <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_100px_32px] gap-2 mb-1 px-1">
+              <span className="text-[12px] font-medium text-slate-500">Başlangıç</span>
+              <span className="text-[12px] font-medium text-slate-500">Bitiş</span>
+              <span className="text-[12px] font-medium text-slate-500">Gün</span>
+              <span />
             </div>
-          ))}
-
-          {faultWarn && (
-            <WarningAlert>
-              Kusur oranları toplamı %{totalFault.toFixed(0)}. Toplam %100 olmalıdır (otomatik
-              düzeltilmez).
-            </WarningAlert>
           )}
-        </div>
-      </FormSection>
 
-      {/* ── Hastane Raporları ── */}
-      <FormSection title="Hastane Raporları">
-        <p className="text-[13px] font-medium text-slate-700 mb-3">Geçici İş Göremezlik</p>
-        <div className="space-y-3">
-          {ti.temporaryIncapacityPeriods.map((row) => (
-            <div
-              key={row.id}
-              className="rounded-[12px] border border-slate-200 p-3.5 space-y-3"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <FormField label="Başlangıç tarihi">
-                  <TextInput
+          <div className="space-y-1.5">
+            {ti.temporaryIncapacityPeriods.map((row) => (
+              <div
+                key={row.id}
+                className="rounded-[8px] border border-slate-200 px-2.5 py-2"
+              >
+                {/* Masaüstü: tek satır */}
+                <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_100px_32px] gap-2 items-center">
+                  <input
                     type="date"
+                    className="w-full h-[36px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
                     value={row.startDate}
                     onChange={(e) => updateTemp(row.id, { startDate: e.target.value }, true)}
                   />
-                </FormField>
-                <FormField label="Bitiş tarihi">
-                  <TextInput
+                  <input
                     type="date"
+                    className="w-full h-[36px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
                     value={row.endDate}
                     onChange={(e) => updateTemp(row.id, { endDate: e.target.value }, true)}
                   />
-                </FormField>
-                <FormField label="Gün sayısı">
-                  <TextInput
+                  <input
                     type="number"
                     inputMode="numeric"
+                    className="w-full h-[36px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
                     value={row.dayCount ?? ""}
                     onChange={(e) =>
                       updateTemp(row.id, {
@@ -322,276 +358,371 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
                       })
                     }
                   />
-                </FormField>
+                  <DeleteIconButton
+                    title="Satırı sil"
+                    onClick={() =>
+                      setTemps(ti.temporaryIncapacityPeriods.filter((x) => x.id !== row.id))
+                    }
+                  />
+                </div>
+
+                {/* Mobil: dikey düzen */}
+                <div className="sm:hidden space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[12px] font-medium text-slate-500">Başlangıç</label>
+                      <input
+                        type="date"
+                        className="w-full h-[38px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                        value={row.startDate}
+                        onChange={(e) => updateTemp(row.id, { startDate: e.target.value }, true)}
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[12px] font-medium text-slate-500">Bitiş</label>
+                      <input
+                        type="date"
+                        className="w-full h-[38px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                        value={row.endDate}
+                        onChange={(e) => updateTemp(row.id, { endDate: e.target.value }, true)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <div className="w-24 space-y-1">
+                      <label className="text-[12px] font-medium text-slate-500">Gün</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full h-[38px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 text-center focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                        value={row.dayCount ?? ""}
+                        onChange={(e) =>
+                          updateTemp(row.id, {
+                            dayCount: e.target.value === "" ? undefined : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                    <DeleteIconButton
+                      title="Satırı sil"
+                      onClick={() =>
+                        setTemps(ti.temporaryIncapacityPeriods.filter((x) => x.id !== row.id))
+                      }
+                    />
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                className="text-[12px] font-medium text-red-600"
-                onClick={() =>
-                  setTemps(ti.temporaryIncapacityPeriods.filter((x) => x.id !== row.id))
-                }
-              >
-                Sil
-              </button>
+            ))}
+            <AddRowButton
+              label="Yeni dönem ekle"
+              onClick={() => setTemps([...ti.temporaryIncapacityPeriods, emptyTemp()])}
+            />
+          </div>
+        </FormSection>
+
+        <FormSection title="Kaza Tarihindeki Gelir">
+          {(() => {
+            const mode: IncomeMode = income.incomeMode ?? (income.useAverage ? "average" : "fixed");
+            const selectMode = (m: IncomeMode) => {
+              if (m === mode) return;
+              if (m === "minWage") {
+                setIncome({ ...income, incomeMode: "minWage", fixedAmount: null, averageSources: [], averageNetResult: undefined });
+              } else if (m === "fixed") {
+                setIncome({ ...income, incomeMode: "fixed", averageSources: [], averageNetResult: undefined });
+              } else {
+                setIncome({ ...income, incomeMode: "average", fixedAmount: null });
+                setAvgModalOpen(true);
+              }
+            };
+            const modeBtn = (m: IncomeMode, label: string) => {
+              const active = mode === m;
+              return (
+                <button
+                  type="button"
+                  onClick={() => selectMode(m)}
+                  className={`relative flex items-center gap-2 rounded-[8px] border px-3 py-2.5 text-left transition-all ${
+                    active
+                      ? "border-blue-800 bg-blue-50/60 ring-1 ring-blue-800/20"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <span
+                    className={`shrink-0 h-4 w-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+                      active ? "border-blue-800" : "border-slate-300"
+                    }`}
+                  >
+                    {active && <span className="h-1.5 w-1.5 rounded-full bg-blue-800" />}
+                  </span>
+                  <span className={`text-[14px] font-medium ${active ? "text-blue-900" : "text-slate-600"}`}>
+                    {label}
+                  </span>
+                </button>
+              );
+            };
+
+            const eventDate = ti.common.eventDate;
+            const minWageAmount = eventDate ? getNetMinWageForDate(eventDate) : null;
+
+            return (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  {modeBtn("minWage", "Asgari Ücret")}
+                  {modeBtn("fixed", "Sabit Ücret")}
+                  {modeBtn("average", "Ortalama Gelir")}
+                </div>
+
+                {mode === "minWage" && (
+                  <div className="mt-3 rounded-[10px] border border-slate-200 bg-slate-50/70 px-4 py-3">
+                    {!eventDate ? (
+                      <p className="text-[14px] text-amber-700">Önce kaza tarihini girin</p>
+                    ) : minWageAmount == null ? (
+                      <WarningAlert>
+                        {eventDate} tarihi için tanımlı asgari ücret dönemi bulunamadı.
+                      </WarningAlert>
+                    ) : (
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
+                          Kaza Tarihindeki Net Asgari Ücret
+                        </p>
+                        <p className="mt-0.5 text-[18px] font-semibold tracking-tight text-blue-900">
+                          {formatCurrency(minWageAmount)} TL
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {mode === "fixed" && (
+                  <div className="mt-2.5">
+                    <FormField
+                      label="Tutar"
+                      error={errorFor(fieldErrors, "accidentIncome.fixedAmount")}
+                    >
+                      <CurrencyInput
+                        value={income.fixedAmount ?? 0}
+                        onChange={(v) =>
+                          setIncome({
+                            ...income,
+                            fixedAmount: v === 0 ? null : v,
+                          })
+                        }
+                      />
+                    </FormField>
+                  </div>
+                )}
+
+                {mode === "average" && (
+                  <div className="mt-3 flex items-center gap-3 rounded-[10px] border border-slate-200 bg-slate-50/70 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
+                        Hesaplanan Ortalama Net Gelir
+                      </p>
+                      <p className="mt-0.5 text-[18px] font-semibold tracking-tight text-blue-900">
+                        {income.averageNetResult != null
+                          ? `₺${formatCurrency(income.averageNetResult)}`
+                          : "—"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
+                      onClick={() => setAvgModalOpen(true)}
+                    >
+                      Kaynakları Düzenle
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </FormSection>
+        </div>
+
+        <div className="calc-info-column">
+        <FormSection title="Kusur Oranları">
+          <div className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+              <p className="flex-1 text-[14px] font-medium text-slate-800">
+                Davacı{plaintiffName ? ` — ${plaintiffName}` : ""}
+              </p>
+              <div className="flex items-center gap-1.5 w-full sm:w-36">
+                <TextInput
+                  type="number"
+                  min={0}
+                  max={100}
+                  inputMode="decimal"
+                  value={plaintiffFault}
+                  onChange={(e) => setPlaintiffFault(Number(e.target.value))}
+                />
+                <span className="text-[13px] text-slate-500">%</span>
+              </div>
             </div>
-          ))}
-          <AddRowButton
-            label="Yeni dönem ekle"
-            onClick={() => setTemps([...ti.temporaryIncapacityPeriods, emptyTemp()])}
-          />
-        </div>
-      </FormSection>
 
-      {/* ── Maluliyet ── */}
-      <FormSection title="Maluliyet">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField
-            label="Maluliyet başlangıç"
-            error={errorFor(fieldErrors, "disability.disabilityStartDate")}
-          >
-            <TextInput
-              type="date"
-              value={ti.disability.disabilityStartDate ?? ""}
-              onChange={(e) =>
-                patch({
-                  ...ti,
-                  disability: { ...ti.disability, disabilityStartDate: e.target.value },
-                })
-              }
-            />
-          </FormField>
-          <FormField
-            label="E cetveline göre (%)"
-            required
-            error={errorFor(fieldErrors, "disability.permanentDisabilityRate")}
-          >
-            <TextInput
-              type="number"
-              min={0}
-              max={100}
-              inputMode="decimal"
-              value={ti.disability.permanentDisabilityRate ?? ""}
-              onChange={(e) =>
-                patch({
-                  ...ti,
-                  disability: {
-                    ...ti.disability,
-                    permanentDisabilityRate:
-                      e.target.value === "" ? undefined : Number(e.target.value),
-                  },
-                })
-              }
-            />
-          </FormField>
-        </div>
-      </FormSection>
+            {ti.liability.parties.length === 0 && (
+              <p className="text-[13px] text-slate-500">
+                İlk adımda davalı türü seçildiğinde burada listelenir.
+              </p>
+            )}
 
-      {/* ── Kaza Tarihindeki Gelir ── */}
-      <FormSection title="Kaza Tarihindeki Gelir">
-        {/* Seçim kartları */}
-        <div className="grid grid-cols-2 gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              if (!income.useAverage) return;
-              setIncome({
-                ...income,
-                useAverage: false,
-                averageSources: [],
-                averageNetResult: undefined,
-              });
-            }}
-            className={`relative flex items-center gap-2.5 rounded-[10px] border px-3.5 py-2.5 text-left transition-all ${
-              !income.useAverage
-                ? "border-blue-800 bg-blue-50/60 ring-1 ring-blue-800/20"
-                : "border-slate-200 bg-white hover:border-slate-300"
-            }`}
-          >
-            <span
-              className={`shrink-0 h-[18px] w-[18px] rounded-full border-2 flex items-center justify-center transition-colors ${
-                !income.useAverage ? "border-blue-800" : "border-slate-300"
-              }`}
-            >
-              {!income.useAverage && (
-                <span className="h-2 w-2 rounded-full bg-blue-800" />
-              )}
-            </span>
-            <span
-              className={`text-[13px] font-medium ${
-                !income.useAverage ? "text-blue-900" : "text-slate-600"
-              }`}
-            >
-              Sabit gelir
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (income.useAverage) return;
-              setIncome({ ...income, useAverage: true, fixedAmount: null });
-              setAvgModalOpen(true);
-            }}
-            className={`relative flex items-center gap-2.5 rounded-[10px] border px-3.5 py-2.5 text-left transition-all ${
-              income.useAverage
-                ? "border-blue-800 bg-blue-50/60 ring-1 ring-blue-800/20"
-                : "border-slate-200 bg-white hover:border-slate-300"
-            }`}
-          >
-            <span
-              className={`shrink-0 h-[18px] w-[18px] rounded-full border-2 flex items-center justify-center transition-colors ${
-                income.useAverage ? "border-blue-800" : "border-slate-300"
-              }`}
-            >
-              {income.useAverage && (
-                <span className="h-2 w-2 rounded-full bg-blue-800" />
-              )}
-            </span>
-            <span
-              className={`text-[13px] font-medium ${
-                income.useAverage ? "text-blue-900" : "text-slate-600"
-              }`}
-            >
-              Ortalama gelir
-            </span>
-          </button>
-        </div>
+            {ti.liability.parties.map((p) => (
+              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+                <p className="flex-1 text-[14px] font-medium text-slate-800">{p.name}</p>
+                <div className="flex items-center gap-1.5 w-full sm:w-36">
+                  <TextInput
+                    type="number"
+                    min={0}
+                    max={100}
+                    inputMode="decimal"
+                    value={p.faultRatio}
+                    onChange={(e) => setDefendantFault(p.id, Number(e.target.value))}
+                  />
+                  <span className="text-[13px] text-slate-500">%</span>
+                </div>
+              </div>
+            ))}
 
-        {/* Sabit gelir inputu */}
-        {!income.useAverage && (
-          <div className="mt-3">
+            {faultWarn && (
+              <WarningAlert>
+                Kusur oranları toplamı %{totalFault.toFixed(0)}. Toplam %100 olmalıdır (otomatik
+                düzeltilmez).
+              </WarningAlert>
+            )}
+          </div>
+        </FormSection>
+
+        <FormSection title="Maluliyet">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField
-              label="Tutar"
-              error={errorFor(fieldErrors, "accidentIncome.fixedAmount")}
+              label="Maluliyet başlangıç"
+              error={errorFor(fieldErrors, "disability.disabilityStartDate")}
+            >
+              <TextInput
+                type="date"
+                value={ti.disability.disabilityStartDate ?? ""}
+                onChange={(e) =>
+                  patch({
+                    ...ti,
+                    disability: { ...ti.disability, disabilityStartDate: e.target.value },
+                  })
+                }
+              />
+            </FormField>
+            <FormField
+              label="E cetveline göre (%)"
+              required
+              error={errorFor(fieldErrors, "disability.permanentDisabilityRate")}
             >
               <TextInput
                 type="number"
+                min={0}
+                max={100}
                 inputMode="decimal"
-                value={income.fixedAmount ?? ""}
+                value={ti.disability.permanentDisabilityRate ?? ""}
                 onChange={(e) =>
-                  setIncome({
-                    ...income,
-                    fixedAmount: e.target.value === "" ? null : Number(e.target.value),
+                  patch({
+                    ...ti,
+                    disability: {
+                      ...ti.disability,
+                      permanentDisabilityRate:
+                        e.target.value === "" ? undefined : Number(e.target.value),
+                    },
                   })
                 }
               />
             </FormField>
           </div>
-        )}
-
-        {/* Ortalama gelir özet kartı */}
-        {income.useAverage && (
-          <div className="mt-3 flex items-center gap-3 rounded-[10px] border border-slate-200 bg-slate-50/70 px-4 py-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
-                Hesaplanan Ortalama Net Gelir
-              </p>
-              <p className="mt-0.5 text-[18px] font-semibold tracking-tight text-blue-900">
-                {income.averageNetResult != null
-                  ? `₺${formatCurrency(income.averageNetResult)}`
-                  : "—"}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
-              onClick={() => setAvgModalOpen(true)}
-            >
-              Kaynakları Düzenle
-            </button>
-          </div>
-        )}
-      </FormSection>
-
-      {/* ── Masraflar ── */}
-      <FormSection title="Masraflar">
-        <ExpenseList
-          title="Hastane masrafı"
-          rows={hospital}
-          onChange={(hospitalExpenses) => patch({ ...ti, hospitalExpenses })}
-        />
-        <div className="mt-5">
-          <ExpenseList
-            title="Yol masrafı"
-            rows={travel}
-            onChange={(travelExpenses) => patch({ ...ti, travelExpenses })}
-          />
+        </FormSection>
         </div>
-        <div className="mt-5">
-          <p className="text-[13px] font-medium text-slate-700 mb-2">Bakıcı masrafı</p>
-          <div className="space-y-3">
-            {caregivers.map((row) => (
-              <div
-                key={row.id}
-                className="rounded-[12px] border border-slate-200 p-3.5 space-y-3"
-              >
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <FormField label="Başlangıç tarihi">
-                    <TextInput
-                      type="date"
-                      value={row.startDate}
-                      onChange={(e) =>
-                        patch({
-                          ...ti,
-                          caregiverExpenses: caregivers.map((x) =>
-                            x.id === row.id ? { ...x, startDate: e.target.value } : x
-                          ),
-                        })
-                      }
-                    />
-                  </FormField>
-                  <FormField label="Bitiş tarihi">
-                    <TextInput
-                      type="date"
-                      value={row.endDate}
-                      onChange={(e) =>
-                        patch({
-                          ...ti,
-                          caregiverExpenses: caregivers.map((x) =>
-                            x.id === row.id ? { ...x, endDate: e.target.value } : x
-                          ),
-                        })
-                      }
-                    />
-                  </FormField>
-                  <FormField label="Ücret">
-                    <TextInput
-                      type="number"
-                      inputMode="decimal"
-                      value={row.amount}
-                      onChange={(e) =>
-                        patch({
-                          ...ti,
-                          caregiverExpenses: caregivers.map((x) =>
-                            x.id === row.id ? { ...x, amount: Number(e.target.value) } : x
-                          ),
-                        })
-                      }
-                    />
-                  </FormField>
-                </div>
-                <button
-                  type="button"
-                  className="text-[12px] font-medium text-red-600"
-                  onClick={() =>
-                    patch({
-                      ...ti,
-                      caregiverExpenses: caregivers.filter((x) => x.id !== row.id),
-                    })
-                  }
-                >
-                  Sil
-                </button>
-              </div>
-            ))}
-            <AddRowButton
-              label="Bakıcı masrafı ekle"
-              onClick={() =>
-                patch({ ...ti, caregiverExpenses: [...caregivers, emptyCaregiver()] })
-              }
+      </div>
+
+      <FormSection title="Masraflar">
+          <ExpenseList
+            title="Hastane masrafı"
+            rows={hospital}
+            onChange={(hospitalExpenses) => patch({ ...ti, hospitalExpenses })}
+          />
+          <div className="mt-4">
+            <ExpenseList
+              title="Yol masrafı"
+              rows={travel}
+              onChange={(travelExpenses) => patch({ ...ti, travelExpenses })}
             />
           </div>
-        </div>
-      </FormSection>
+          <div className="mt-4">
+            <p className="text-[13px] font-medium text-slate-700 mb-2">Bakıcı masrafı</p>
+            <div className="space-y-2.5">
+              {caregivers.map((row) => (
+                <div
+                  key={row.id}
+                  className="rounded-[10px] border border-slate-200 p-3"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <FormField label="Başlangıç tarihi">
+                        <TextInput
+                          type="date"
+                          value={row.startDate}
+                          onChange={(e) =>
+                            patch({
+                              ...ti,
+                              caregiverExpenses: caregivers.map((x) =>
+                                x.id === row.id ? { ...x, startDate: e.target.value } : x
+                              ),
+                            })
+                          }
+                        />
+                      </FormField>
+                      <FormField label="Bitiş tarihi">
+                        <TextInput
+                          type="date"
+                          value={row.endDate}
+                          onChange={(e) =>
+                            patch({
+                              ...ti,
+                              caregiverExpenses: caregivers.map((x) =>
+                                x.id === row.id ? { ...x, endDate: e.target.value } : x
+                              ),
+                            })
+                          }
+                        />
+                      </FormField>
+                      <FormField label="Ücret">
+                        <CurrencyInput
+                          value={row.amount}
+                          onChange={(v) =>
+                            patch({
+                              ...ti,
+                              caregiverExpenses: caregivers.map((x) =>
+                                x.id === row.id ? { ...x, amount: v } : x
+                              ),
+                            })
+                          }
+                        />
+                      </FormField>
+                    </div>
+                    <div className="pt-6 sm:pt-6">
+                      <DeleteIconButton
+                        title="Bakıcı masrafını sil"
+                        onClick={() =>
+                          patch({
+                            ...ti,
+                            caregiverExpenses: caregivers.filter((x) => x.id !== row.id),
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <AddRowButton
+                label="Bakıcı masrafı ekle"
+                onClick={() =>
+                  patch({ ...ti, caregiverExpenses: [...caregivers, emptyCaregiver()] })
+                }
+              />
+            </div>
+          </div>
+        </FormSection>
 
       {/* ── Ortalama gelir modalı ── */}
       {avgModalOpen && (
@@ -599,7 +730,7 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
           initialSources={income.averageSources}
           eventDate={ti.common.eventDate}
           onApply={(sources, averageNetResult) => {
-            setIncome({ ...income, useAverage: true, averageSources: sources, averageNetResult });
+            setIncome({ ...income, incomeMode: "average", averageSources: sources, averageNetResult });
             setAvgModalOpen(false);
           }}
           onClose={() => setAvgModalOpen(false)}
@@ -622,43 +753,42 @@ function ExpenseList({
 }) {
   return (
     <div>
-      <p className="text-[13px] font-medium text-slate-700 mb-2">{title}</p>
-      <div className="space-y-3">
+      <p className="text-[13px] font-medium text-slate-700 mb-1.5">{title}</p>
+      <div className="space-y-2.5">
         {rows.map((row) => (
-          <div key={row.id} className="rounded-[12px] border border-slate-200 p-3.5 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <FormField label="Açıklama">
-                <TextInput
-                  value={row.name}
-                  onChange={(e) =>
-                    onChange(
-                      rows.map((x) => (x.id === row.id ? { ...x, name: e.target.value } : x))
-                    )
-                  }
-                />
-              </FormField>
-              <FormField label="Tutar">
-                <TextInput
-                  type="number"
-                  inputMode="decimal"
-                  value={row.amount}
-                  onChange={(e) =>
-                    onChange(
-                      rows.map((x) =>
-                        x.id === row.id ? { ...x, amount: Number(e.target.value) } : x
+          <div key={row.id} className="rounded-[10px] border border-slate-200 p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <FormField label="Açıklama">
+                  <TextInput
+                    value={row.name}
+                    onChange={(e) =>
+                      onChange(
+                        rows.map((x) => (x.id === row.id ? { ...x, name: e.target.value } : x))
                       )
-                    )
-                  }
+                    }
+                  />
+                </FormField>
+                <FormField label="Tutar">
+                  <CurrencyInput
+                    value={row.amount}
+                    onChange={(v) =>
+                      onChange(
+                        rows.map((x) =>
+                          x.id === row.id ? { ...x, amount: v } : x
+                        )
+                      )
+                    }
+                  />
+                </FormField>
+              </div>
+              <div className="pt-6 sm:pt-6">
+                <DeleteIconButton
+                  title="Masrafı sil"
+                  onClick={() => onChange(rows.filter((x) => x.id !== row.id))}
                 />
-              </FormField>
+              </div>
             </div>
-            <button
-              type="button"
-              className="text-[12px] font-medium text-red-600"
-              onClick={() => onChange(rows.filter((x) => x.id !== row.id))}
-            >
-              Sil
-            </button>
           </div>
         ))}
         <AddRowButton label={`${title} ekle`} onClick={() => onChange([...rows, emptyExpense()])} />
@@ -818,32 +948,26 @@ function AverageIncomeModal({
                           </TextSelect>
                         </FormField>
                         <FormField label="Tutar">
-                          <TextInput
-                            type="number"
-                            inputMode="decimal"
-                            value={s.amount || ""}
-                            onChange={(e) =>
-                              updateSource(s.id, {
-                                amount:
-                                  e.target.value === "" ? 0 : Number(e.target.value),
-                              })
+                          <CurrencyInput
+                            value={s.amount}
+                            onChange={(v) =>
+                              updateSource(s.id, { amount: v })
                             }
                           />
                         </FormField>
                         <FormField label="Net karşılık">
-                          <div className="w-full min-h-[46px] rounded-[9px] border border-slate-200 bg-slate-50 px-3.5 flex items-center text-[14px] text-slate-800">
+                          <div className="w-full min-h-[42px] rounded-[8px] border border-slate-200 bg-slate-50 px-3 flex items-center justify-end text-[13px] text-slate-800">
                             {s.amount > 0 ? `₺${formatCurrency(net)}` : "—"}
                           </div>
                         </FormField>
                       </div>
                       {canDelete && (
-                        <button
-                          type="button"
-                          className="text-[12px] font-medium text-red-600 mt-2"
-                          onClick={() => removeSource(s.id)}
-                        >
-                          Sil
-                        </button>
+                        <div className="mt-2">
+                          <DeleteIconButton
+                            title="Kaynağı sil"
+                            onClick={() => removeSource(s.id)}
+                          />
+                        </div>
                       )}
                     </div>
                   );

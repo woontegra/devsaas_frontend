@@ -2,7 +2,8 @@ import { uiText } from "../../../config/uiText";
 import type { ActuarialResultPayload } from "../../../services/api";
 
 const t = uiText.result;
-const fmt = (n: number) => n.toLocaleString("tr-TR");
+import { formatTRY } from "./shared/FormPrimitives";
+const fmt = formatTRY;
 
 interface Step5ResultProps {
   result: ActuarialResultPayload | null;

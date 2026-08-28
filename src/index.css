@@ -35,66 +35,69 @@ body {
 }
 
 body {
-  background: #F8F9FB;
+  background: #F4F7F7;
+  color: #22313F;
 }
 
 .bg-auth-dark {
-  background:
-    radial-gradient(circle at 20% 30%, rgba(30, 64, 175, 0.25), transparent 42%),
-    radial-gradient(circle at 80% 70%, rgba(15, 23, 42, 0.55), transparent 45%),
-    #0B1F4A;
-}
-
-.dark {
-  background: transparent;
-  color: #F8FAFC;
+  background: #F4F7F7;
 }
 
 .bg-app-light {
-  background: #F8F9FB;
+  background: #F4F7F7;
 }
 
-/* Ana çalışma alanı */
+/* ─── Ana çalışma alanı ──────────────────────────────────────────── */
 .app-workspace {
-  width: calc(100vw - 48px);
-  max-width: 1680px;
+  width: 100%;
+  max-width: none;
   min-width: 0;
   margin-inline: auto;
   padding-inline: 24px;
   box-sizing: border-box;
 }
 
-@media (max-width: 767px) {
-  .app-workspace {
-    width: 100%;
-    max-width: none;
-    padding-inline: 16px;
-  }
+@media (min-width: 1440px) {
+  .app-workspace { padding-inline: 32px; }
 }
+
+@media (max-width: 767px) {
+  .app-workspace { padding-inline: 16px; }
+}
+
+/* ─── Wizard 3-kolon grid ────────────────────────────────────────── */
 
 .wizard-desktop-grid {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   grid-template-columns: 1fr;
+  align-items: start;
 }
 
 .wizard-summary-aside {
   display: none;
 }
 
-@media (min-width: 1024px) and (max-width: 1279px) {
+/* 1024–1439: sol panel + form; özet formun altına */
+@media (min-width: 1024px) and (max-width: 1439px) {
   .wizard-desktop-grid {
-    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 20px;
   }
   .wizard-summary-aside {
     display: grid;
     grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
   }
 }
 
-@media (min-width: 1280px) {
+/* 1440+: tam 3 kolon */
+@media (min-width: 1440px) {
+  .wizard-desktop-grid {
+    grid-template-columns: 220px minmax(0, 1fr) 280px;
+    gap: 24px;
+  }
   .wizard-summary-aside {
     display: flex;
     flex-direction: column;
@@ -102,45 +105,57 @@ body {
   }
 }
 
-@media (min-width: 1280px) and (max-width: 1599px) {
-  .wizard-desktop-grid {
-    grid-template-columns: 270px minmax(0, 1fr) 310px;
+/* ─── Hesaplama bilgileri — iki bağımsız dikey kolon ─────────────── */
+.calc-info-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+}
+
+@media (min-width: 768px) {
+  .calc-info-columns {
+    flex-direction: row;
+    gap: 16px;
+    align-items: flex-start;
   }
 }
 
-@media (min-width: 1600px) {
-  .wizard-desktop-grid {
-    grid-template-columns: 300px minmax(760px, 1fr) 350px;
-  }
+.calc-info-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 0;
 }
 
-/* Zarif buton sistemi */
+/* ─── Zarif buton sistemi ────────────────────────────────────────── */
 @layer components {
   .btn-primary {
-    @apply rounded-[10px] bg-blue-900 text-white text-[13px] font-medium
-      hover:bg-blue-800 transition-colors
-      disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed;
+    @apply rounded-[10px] bg-[#0F5F63] text-white text-[13px] font-medium
+      hover:bg-[#0B474A] transition-colors duration-200
+      disabled:bg-[#D9E5E3] disabled:text-[#6B7280] disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply rounded-[10px] bg-white border border-slate-200 text-slate-700 text-[13px] font-medium
-      hover:bg-slate-50 transition-colors
+    @apply rounded-[10px] bg-white border border-[#D9E5E3] text-[#22313F] text-[13px] font-medium
+      hover:bg-[#EAF4F3]/60 hover:border-[#0F5F63]/25 transition-colors duration-200
       disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-danger {
     @apply rounded-[10px] bg-white border border-red-200 text-red-600 text-[13px] font-medium
-      hover:bg-red-50 transition-colors;
+      hover:bg-red-50 transition-colors duration-200;
   }
 
   .btn-ghost {
-    @apply rounded-[10px] bg-transparent text-slate-600 text-[13px] font-medium
-      hover:bg-slate-50 transition-colors;
+    @apply rounded-[10px] bg-transparent text-[#6B7280] text-[13px] font-medium
+      hover:bg-[#EAF4F3]/50 hover:text-[#22313F] transition-colors duration-200;
   }
 }
 
 .wizard-action-bar-inner {
-  min-height: 72px;
+  min-height: 64px;
 }
 
 .animate-fade-in {
@@ -150,4 +165,144 @@ body {
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* ─── Ana sayfa dashboard ───────────────────────────────────────── */
+/* app-workspace ile aynı genişlik; ek max-width yok */
+.dashboard-workspace {
+  width: 100%;
+  max-width: none;
+}
+
+/* 4 hesap türü kartları */
+.calc-dashboard-type-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .calc-dashboard-type-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .calc-dashboard-type-grid {
+    gap: 20px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .calc-dashboard-type-grid {
+    gap: 24px;
+  }
+}
+
+@media (min-width: 1920px) {
+  .calc-dashboard-type-grid {
+    gap: 28px;
+  }
+}
+
+/* Özet kartları */
+.calc-dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .calc-dashboard-stats-grid {
+    gap: 10px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .calc-dashboard-stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Alt paneller: Son Taslaklar + Hızlı Erişim */
+.calc-dashboard-panels-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .calc-dashboard-panels-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .calc-dashboard-panels-grid {
+    gap: 20px;
+  }
+}
+
+/* Son Çalışmalar / Son Taslaklar liste dağılımı */
+.calc-dashboard-work-list {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 1280px) {
+  .calc-dashboard-work-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 8px;
+  }
+
+  .calc-dashboard-work-list > li {
+    min-width: 0;
+  }
+}
+
+@keyframes calcDashboardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.calc-dashboard-hero,
+.calc-dashboard-stats,
+.calc-dashboard-main,
+.calc-dashboard-side,
+.calc-dashboard-bottom {
+  animation: calcDashboardIn 210ms ease forwards;
+}
+
+.calc-dashboard-main { animation-delay: 40ms; }
+.calc-dashboard-stats { animation-delay: 80ms; }
+.calc-dashboard-side { animation-delay: 100ms; }
+.calc-dashboard-bottom { animation-delay: 120ms; }
+
+.calc-dashboard-type-card {
+  opacity: 0;
+  animation: calcDashboardIn 210ms ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calc-dashboard-hero,
+  .calc-dashboard-stats,
+  .calc-dashboard-main,
+  .calc-dashboard-side,
+  .calc-dashboard-bottom,
+  .calc-dashboard-type-card,
+  .calc-type-select-header,
+  .calc-type-select-card {
+    opacity: 1;
+    animation: none;
+    transform: none;
+  }
 }

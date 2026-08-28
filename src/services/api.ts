@@ -3,6 +3,8 @@ import type {
   CalculationDraftInput,
   CalculationValidateResponse,
 } from "../modules/actuarial/types/calculationDraft";
+import type { CalculationRunResponse } from "../modules/actuarial/types/trafficInjuryResult";
+import type { CalculationReviewSummaryResponse } from "../modules/actuarial/types/calculationReviewSummary";
 
 const baseURL =
   import.meta.env.VITE_API_URL ??
@@ -63,6 +65,25 @@ export function toApiClientError(err: unknown): ApiClientError {
   return { status, message: ax.message || "İstek başarısız." };
 }
 
+/** 402 / erişim kodları — run ve report ortak mesaj */
+export function formatCalculationAccessError(error: ApiClientError): string {
+  if (error.status !== 402) return error.message;
+  switch (error.code) {
+    case "PAYMENT_REQUIRED_SINGLE":
+      return "Bu hesap için tek seferlik ödeme gereklidir.";
+    case "SUBSCRIPTION_EXPIRED":
+      return "Aboneliğiniz sona ermiş. Yenileme sonrası hesap yapabilirsiniz.";
+    case "PAYMENT_PENDING":
+      return "Ödemeniz işleniyor. Lütfen kısa süre sonra tekrar deneyin.";
+    case "PAYMENT_FAILED":
+      return "Ödeme tamamlanamadı. Lütfen tekrar deneyin.";
+    case "CALCULATION_ACCESS_REQUIRED":
+      return error.message || "Hesaplama erişimi için ödeme veya abonelik gerekiyor.";
+    default:
+      return error.message || "Hesaplama erişimi reddedildi.";
+  }
+}
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {
@@ -111,14 +132,73 @@ export function validateCalculationDraft(
     });
 }
 
-/** Aktif: erişim yoksa 402 — motor çağrılmaz */
-export function requestCalculationRun(draft: CalculationDraftInput): Promise<never> {
-  return api.post("/calculations/run", draft).then(() => {
-    throw {
-      status: 501,
-      message: "Hesaplama motoru henüz bağlanmamıştır.",
-    } as ApiClientError;
-  });
+/** Girdi özeti + inputHash — motor çalıştırmaz */
+export function requestCalculationReviewSummary(
+  draft: CalculationDraftInput
+): Promise<CalculationReviewSummaryResponse> {
+  return api
+    .post<CalculationReviewSummaryResponse>("/calculations/review-summary", draft)
+    .then((r) => r.data)
+    .catch((err) => {
+      throw toApiClientError(err);
+    });
+}
+
+/** TRAFFIC_INJURY hesap motoru — sunucu tarafı gerçek sonuç */
+export function requestCalculationRun(
+  draft: CalculationDraftInput
+): Promise<CalculationRunResponse> {
+  return api
+    .post<CalculationRunResponse>("/calculations/run", draft)
+    .then((r) => r.data)
+    .catch((err) => {
+      throw toApiClientError(err);
+    });
+}
+
+/** TRAFFIC_INJURY Word raporu — sunucu motor sonucundan .docx üretir */
+export function requestTrafficInjuryWordReport(draft: CalculationDraftInput): Promise<Blob> {
+  return api
+    .post("/calculations/report", draft, { responseType: "blob" })
+    .then((r) => r.data as Blob)
+    .catch(async (err) => {
+      const ax = err as AxiosError<Blob | Record<string, unknown>>;
+      if (ax.response?.data instanceof Blob && ax.response.data.type?.includes("json")) {
+        try {
+          const text = await ax.response.data.text();
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          if (ax.response.status === 422 && parsed.errors) {
+            throw {
+              status: 422,
+              message: typeof parsed.message === "string" ? parsed.message : "Doğrulama hatası.",
+              validation: parsed as unknown as CalculationValidateResponse,
+            } satisfies ApiClientError;
+          }
+          throw {
+            status: ax.response.status,
+            code: typeof parsed.code === "string" ? parsed.code : undefined,
+            message:
+              typeof parsed.message === "string"
+                ? parsed.message
+                : typeof parsed.error === "string"
+                  ? parsed.error
+                  : "Rapor oluşturulamadı.",
+          } satisfies ApiClientError;
+        } catch (inner) {
+          if (inner && typeof inner === "object" && "status" in inner) throw inner;
+        }
+      }
+      throw toApiClientError(err);
+    });
+}
+
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Legacy tipler (aktif UI kullanmaz; derleme için dosyalar korunur) ───

@@ -3,7 +3,8 @@ import { uiText } from "../../config/uiText";
 import type { SGKPSDYearlyRowPayload } from "../../services/api";
 
 const t = uiText.result;
-const fmt = (n: number) => n.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
+import { formatTRY } from "./wizard/shared/FormPrimitives";
+const fmt = formatTRY;
 
 interface SgkPSDSectionProps {
   sgkPSD: number;

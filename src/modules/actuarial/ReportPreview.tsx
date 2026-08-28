@@ -1,6 +1,7 @@
 import type { ActuarialResultPayload } from "../../services/api";
 
-const formatCurrency = (n: number) => n.toLocaleString("tr-TR");
+import { formatTRY } from "./wizard/shared/FormPrimitives";
+const formatCurrency = formatTRY;
 
 interface ReportPreviewProps {
   result: ActuarialResultPayload | null;

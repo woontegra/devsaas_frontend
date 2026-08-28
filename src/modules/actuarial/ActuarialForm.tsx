@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 import { Button } from "../../components/ui/Button";
+import { CurrencyInput } from "./wizard/shared/FormPrimitives";
 import type { ActuarialInputPayload } from "../../services/api";
 
 export interface ActuarialFormProps {
@@ -34,7 +35,7 @@ export function ActuarialForm({ onSubmit, loading = false }: ActuarialFormProps)
   const [birthDate, setBirthDate] = useState(initial.birthDate);
   const [accidentDate, setAccidentDate] = useState(initial.accidentDate);
   const [gender, setGender] = useState<"male" | "female">(initial.gender);
-  const [monthlyIncome, setMonthlyIncome] = useState(String(initial.monthlyIncome));
+  const [monthlyIncome, setMonthlyIncome] = useState(initial.monthlyIncome);
   const [disabilityRate, setDisabilityRate] = useState(String(initial.disabilityRate));
   const [interestRate, setInterestRate] = useState(String(initial.interestRate));
   const [wageIncreaseRate, setWageIncreaseRate] = useState(String(initial.wageIncreaseRate));
@@ -45,7 +46,7 @@ export function ActuarialForm({ onSubmit, loading = false }: ActuarialFormProps)
       birthDate,
       accidentDate,
       gender,
-      monthlyIncome: Number(monthlyIncome),
+      monthlyIncome,
       disabilityRate: Number(disabilityRate),
       interestRate: Number(interestRate),
       wageIncreaseRate: Number(wageIncreaseRate),
@@ -80,15 +81,13 @@ export function ActuarialForm({ onSubmit, loading = false }: ActuarialFormProps)
         />
       </InputCard>
       <InputCard title="Finansal Veriler">
-        <Input
-          label="Aylık Gelir"
-          type="number"
-          min={0}
-          step={0.01}
-          value={monthlyIncome}
-          onChange={(e) => setMonthlyIncome(e.target.value)}
-          required
-        />
+        <div className="flex flex-col gap-1.5 w-full">
+          <label className="text-[11px] font-normal text-gray-500 tracking-wide">Aylık Gelir *</label>
+          <CurrencyInput
+            value={monthlyIncome}
+            onChange={setMonthlyIncome}
+          />
+        </div>
         <Input
           label="Maluliyet Oranı (%)"
           type="number"

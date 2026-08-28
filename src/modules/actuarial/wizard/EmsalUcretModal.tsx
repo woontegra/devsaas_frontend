@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { CurrencyInput } from "./shared/FormPrimitives";
 import { formTypography } from "../../../styles/formTypography";
 import type { EmsalUcretRow } from "../types/trafficInjuryFormTypes";
 
@@ -133,15 +134,10 @@ export function EmsalUcretModal({
                   <label className={formTypography.label + " w-16 shrink-0"}>
                     Tutar
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={row.amount}
-                    onChange={(e) => setRowAt(index, "amount", e.target.value)}
+                  <CurrencyInput
+                    value={Number(row.amount) || 0}
+                    onChange={(v) => setRowAt(index, "amount", String(v))}
                     className={inputClass + " flex-1"}
-                    placeholder="0"
-                    aria-label={`Ücret ${index + 1} tutarı`}
                   />
                 </div>
               </div>

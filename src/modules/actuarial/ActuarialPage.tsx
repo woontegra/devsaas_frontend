@@ -16,7 +16,9 @@ import {
   saveDraftToSession,
   type DraftSaveStatus,
 } from "./draftStorage";
-import { toApiClientError, validateCalculationDraft } from "../../services/api";
+import { toApiClientError, validateCalculationDraft, requestCalculationRun, requestCalculationReviewSummary, requestTrafficInjuryWordReport, downloadBlob, formatCalculationAccessError } from "../../services/api";
+import type { TrafficInjuryCalculationResult } from "./types/trafficInjuryResult";
+import type { CalculationReviewSummaryResponse, ReviewFlowPhase } from "./types/calculationReviewSummary";
 import { getWizardSteps } from "./wizard/configs";
 
 export type { DraftSaveStatus } from "./draftStorage";
@@ -32,6 +34,15 @@ export function ActuarialPage() {
   const [validation, setValidation] = useState<CalculationValidateResponse | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ValidationIssue[]>([]);
   const [validating, setValidating] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<TrafficInjuryCalculationResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [reviewSummary, setReviewSummary] = useState<CalculationReviewSummaryResponse | null>(null);
+  const [reviewSummaryLoading, setReviewSummaryLoading] = useState(false);
+  const [reviewSummaryError, setReviewSummaryError] = useState<string | null>(null);
+  const [reviewFlowPhase, setReviewFlowPhase] = useState<ReviewFlowPhase>("idle");
   const [apiMessage, setApiMessage] = useState<string | null>(null);
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -76,6 +87,11 @@ export function ActuarialPage() {
     setStepId(steps[0]?.id ?? "parties");
     setValidation(null);
     setFieldErrors([]);
+    setRunResult(null);
+    setRunError(null);
+    setReviewSummary(null);
+    setReviewSummaryError(null);
+    setReviewFlowPhase("idle");
     setPhase("wizard");
   }, []);
 
@@ -83,6 +99,30 @@ export function ActuarialPage() {
     setDraft(next);
     setValidation(null);
     setFieldErrors([]);
+    setRunResult(null);
+    setRunError(null);
+    setReviewSummary(null);
+    setReviewSummaryError(null);
+    setReviewFlowPhase("idle");
+  }, []);
+
+  const fetchReviewSummary = useCallback((currentDraft: CalculationDraft) => {
+    if (currentDraft.calculationType !== "TRAFFIC_INJURY") return;
+    setReviewSummaryLoading(true);
+    setReviewSummaryError(null);
+    setReviewSummary(null);
+    setReviewFlowPhase("idle");
+    requestCalculationReviewSummary(currentDraft)
+      .then((res) => {
+        setReviewSummary(res);
+        setReviewFlowPhase("inputReview");
+      })
+      .catch((err: unknown) => {
+        const mapped = toApiClientError(err);
+        setReviewSummaryError(mapped.message);
+        setReviewFlowPhase("idle");
+      })
+      .finally(() => setReviewSummaryLoading(false));
   }, []);
 
   const handleValidate = useCallback(() => {
@@ -90,11 +130,20 @@ export function ActuarialPage() {
     setValidating(true);
     setApiMessage(null);
     setStepId("review");
+    setReviewSummary(null);
+    setReviewSummaryError(null);
+    setReviewFlowPhase("idle");
+    setRunResult(null);
+    setRunError(null);
     validateCalculationDraft(draft)
       .then((res) => {
         setValidation(res);
         setFieldErrors(res.errors ?? []);
-        if (!res.valid) setApiMessage("Eksik veya hatalı alanlar var.");
+        if (!res.valid) {
+          setApiMessage("Eksik veya hatalı alanlar var.");
+          return;
+        }
+        fetchReviewSummary(draft);
       })
       .catch((err: unknown) => {
         const mapped = toApiClientError(err);
@@ -105,7 +154,64 @@ export function ActuarialPage() {
         }
       })
       .finally(() => setValidating(false));
+  }, [draft, fetchReviewSummary]);
+
+  const handleRunCalculation = useCallback(() => {
+    if (!draft || draft.calculationType !== "TRAFFIC_INJURY") return;
+    setRunning(true);
+    setRunError(null);
+    setApiMessage(null);
+    setStepId("review");
+    requestCalculationRun(draft)
+      .then((res) => {
+        setRunResult(res.result);
+        setReviewFlowPhase("result");
+      })
+      .catch((err: unknown) => {
+        const mapped = toApiClientError(err);
+        setRunResult(null);
+        if (mapped.status === 402) {
+          setRunError(formatCalculationAccessError(mapped));
+        } else if (mapped.status === 422 && mapped.validation) {
+          setValidation(mapped.validation);
+          setFieldErrors(mapped.validation.errors ?? []);
+          setRunError("Taslak doğrulamadan geçemedi; eksik alanları tamamlayın.");
+        } else {
+          setRunError(mapped.message);
+        }
+      })
+      .finally(() => setRunning(false));
   }, [draft]);
+
+  /** Onay sonrası run — ileride tek hesap ödeme kapısı buraya eklenir */
+  const handleConfirmAndRun = useCallback(() => {
+    if (!draft || draft.calculationType !== "TRAFFIC_INJURY") return;
+    if (reviewFlowPhase !== "inputReview" || !reviewSummary) return;
+    // TODO: PAYMENT_REQUIRED_SINGLE → checkout yönlendirmesi
+    handleRunCalculation();
+  }, [draft, reviewFlowPhase, reviewSummary, handleRunCalculation]);
+
+  const handleDownloadWordReport = useCallback(() => {
+    if (!draft || draft.calculationType !== "TRAFFIC_INJURY" || !runResult) return;
+    setReporting(true);
+    setReportError(null);
+    requestTrafficInjuryWordReport(draft)
+      .then((blob) => {
+        const iso = draft.common.calculationDate || new Date().toISOString().slice(0, 10);
+        const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const dateLabel = m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+        downloadBlob(blob, `Trafik_Kazasi_Yaralanma_Raporu_${dateLabel}.docx`);
+      })
+      .catch((err: unknown) => {
+        const mapped = toApiClientError(err);
+        if (mapped.status === 402) {
+          setReportError(formatCalculationAccessError(mapped));
+        } else {
+          setReportError(mapped.message || "Word raporu oluşturulamadı.");
+        }
+      })
+      .finally(() => setReporting(false));
+  }, [draft, runResult]);
 
   const handleSaveDraft = useCallback(() => {
     if (!draft) return;
@@ -129,6 +235,11 @@ export function ActuarialPage() {
     setLastSavedAt(null);
     setValidation(null);
     setFieldErrors([]);
+    setRunResult(null);
+    setRunError(null);
+    setReviewSummary(null);
+    setReviewSummaryError(null);
+    setReviewFlowPhase("idle");
     setStepId(getWizardSteps(draft.calculationType)[0]?.id ?? "parties");
   }, [draft]);
 
@@ -170,9 +281,17 @@ export function ActuarialPage() {
     setLegacyNotice(false);
   }, []);
 
+  const isSelectPhase = phase === "select" || !draft;
+
   return (
-    <div className="bg-slate-100 pb-3">
-      <div className="app-workspace py-3 sm:py-5">
+    <div
+      className={
+        isSelectPhase
+          ? "min-h-[calc(100vh-0px)] bg-[#F4F7F7] pb-5"
+          : "bg-slate-100 pb-3"
+      }
+    >
+      <div className={`app-workspace ${isSelectPhase ? "dashboard-workspace py-3 sm:py-4" : "py-3 sm:py-5"}`}>
         {legacyNotice && (
           <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-[12px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-normal text-amber-950">
             <div className="flex items-start gap-2.5 min-w-0 flex-1">
@@ -215,7 +334,18 @@ export function ActuarialPage() {
             validation={validation}
             fieldErrors={fieldErrors}
             validating={validating}
+            running={running}
+            runResult={runResult}
+            runError={runError}
+            reporting={reporting}
+            reportError={reportError}
+            reviewSummary={reviewSummary}
+            reviewSummaryLoading={reviewSummaryLoading}
+            reviewSummaryError={reviewSummaryError}
+            reviewFlowPhase={reviewFlowPhase}
             onValidate={handleValidate}
+            onConfirmAndRun={handleConfirmAndRun}
+            onDownloadWordReport={handleDownloadWordReport}
             onSaveDraft={handleSaveDraft}
             onClearDraft={handleClearDraft}
             draftSaveStatus={draftSaveStatus}

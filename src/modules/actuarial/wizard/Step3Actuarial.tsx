@@ -1,5 +1,6 @@
 import { Input } from "../../../components/ui/Input";
 import { Select } from "../../../components/ui/Select";
+import { CurrencyInput } from "./shared/FormPrimitives";
 import { uiText } from "../../../config/uiText";
 import type { ActuarialParams, CalculationType } from "../types/caseFormTypes";
 
@@ -31,15 +32,24 @@ export function Step3Actuarial({ actuarial, onChange, calculationType }: Step3Ac
       )}
       {showSgkGeliri && (
         <>
-          <Input label={t.monthlySgkIncome} type="number" min={0} value={String(actuarial.monthlySgkIncome ?? 0)} onChange={(e) => onChange({ monthlySgkIncome: Number(e.target.value) || 0 })} />
-          <Input label={t.sgkGeliri} type="number" min={0} value={String(actuarial.sgkGeliri)} onChange={(e) => onChange({ sgkGeliri: Number(e.target.value) || 0 })} />
+          <div className="flex flex-col gap-1.5 w-full">
+            <label className="text-[11px] font-normal text-gray-500 tracking-wide">{t.monthlySgkIncome}</label>
+            <CurrencyInput value={actuarial.monthlySgkIncome ?? 0} onChange={(v) => onChange({ monthlySgkIncome: v })} />
+          </div>
+          <div className="flex flex-col gap-1.5 w-full">
+            <label className="text-[11px] font-normal text-gray-500 tracking-wide">{t.sgkGeliri}</label>
+            <CurrencyInput value={actuarial.sgkGeliri} onChange={(v) => onChange({ sgkGeliri: v })} />
+          </div>
         </>
       )}
       {showWorkInjuryExtras && (
         <>
           <Input label={t.temporaryDisabilityStartDate} type="date" value={actuarial.temporaryDisabilityStartDate ?? ""} onChange={(e) => onChange({ temporaryDisabilityStartDate: e.target.value })} />
           <Input label={t.temporaryDisabilityEndDate} type="date" value={actuarial.temporaryDisabilityEndDate ?? ""} onChange={(e) => onChange({ temporaryDisabilityEndDate: e.target.value })} />
-          <Input label={t.monthlyCareCost} type="number" min={0} value={String(actuarial.monthlyCareCost ?? 0)} onChange={(e) => onChange({ monthlyCareCost: Number(e.target.value) || 0 })} />
+          <div className="flex flex-col gap-1.5 w-full">
+            <label className="text-[11px] font-normal text-gray-500 tracking-wide">{t.monthlyCareCost}</label>
+            <CurrencyInput value={actuarial.monthlyCareCost ?? 0} onChange={(v) => onChange({ monthlyCareCost: v })} />
+          </div>
         </>
       )}
       <Input label={t.increaseRate} type="number" min={0} step={0.01} value={String(actuarial.increaseRate)} onChange={(e) => onChange({ increaseRate: Number(e.target.value) || 0 })} />

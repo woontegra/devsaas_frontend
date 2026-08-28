@@ -5,6 +5,9 @@ import {
   type CalculationType,
   type PlaintiffGender,
   type TrafficInjuryDraft,
+  type InsuranceGarameEntry,
+  type InsurancePaymentRecord,
+  newId,
 } from "./types/calculationDraft";
 
 export type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
@@ -42,19 +45,29 @@ function mapGender(g: unknown): PlaintiffGender {
 
 /** Eski gelir/gider alanlarını yeni Hesaplama Bilgileri modeline yumuşak geçir */
 function coerceAccidentIncome(raw: Record<string, unknown>): TrafficInjuryDraft["accidentIncome"] {
-  const existing = raw.accidentIncome as TrafficInjuryDraft["accidentIncome"] | undefined;
+  const existing = raw.accidentIncome as
+    | (TrafficInjuryDraft["accidentIncome"] & { useAverage?: boolean })
+    | undefined;
+
   if (existing && typeof existing === "object" && Array.isArray(existing.averageSources)) {
+    let mode = existing.incomeMode;
+    if (!mode) {
+      mode = existing.useAverage ? "average" : (existing.fixedAmount != null ? "fixed" : "minWage");
+    }
     return {
+      incomeMode: mode,
       fixedAmount: existing.fixedAmount ?? null,
-      useAverage: Boolean(existing.useAverage),
       averageSources: existing.averageSources,
+      ...(existing.averageNetResult != null ? { averageNetResult: existing.averageNetResult } : {}),
     };
   }
+
   const periods = Array.isArray(raw.incomePeriods) ? raw.incomePeriods : [];
   const first = periods[0] as { amount?: number } | undefined;
+  const hasAmount = typeof first?.amount === "number" && first.amount > 0;
   return {
-    fixedAmount: typeof first?.amount === "number" ? first.amount : null,
-    useAverage: false,
+    incomeMode: hasAmount ? "fixed" : "minWage",
+    fixedAmount: hasAmount ? (first!.amount ?? null) : null,
     averageSources: [],
   };
 }
@@ -93,6 +106,91 @@ function coerceCaregivers(raw: unknown): TrafficInjuryDraft["caregiverExpenses"]
       });
   }
   return [];
+}
+
+function coerceGarameEntry(raw: unknown): InsuranceGarameEntry {
+  if (!raw || typeof raw !== "object") {
+    return { id: newId(), subjectRef: "plaintiff" };
+  }
+  const r = raw as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const legacyLabel =
+    typeof r.personLabel === "string" && r.personLabel.trim() ? r.personLabel.trim() : undefined;
+  const externalPersonLabel =
+    typeof r.externalPersonLabel === "string" && r.externalPersonLabel.trim()
+      ? r.externalPersonLabel.trim()
+      : legacyLabel;
+  const subjectRef = r.subjectRef === "plaintiff" ? "plaintiff" : undefined;
+
+  return {
+    id: typeof r.id === "string" ? r.id : newId(),
+    subjectRef: subjectRef ?? (externalPersonLabel ? undefined : "plaintiff"),
+    externalPersonLabel: subjectRef ? undefined : externalPersonLabel,
+    claimAmount: num(r.claimAmount),
+    garameBasisAmount: num(r.garameBasisAmount),
+    garameRatio: num(r.garameRatio),
+    accidentLimitShare: num(r.accidentLimitShare),
+    payableAfterPersonLimit: num(r.payableAfterPersonLimit),
+  };
+}
+
+function findDefendantId(
+  defendants: TrafficInjuryDraft["parties"]["defendants"],
+  type: "COMPULSORY_TRAFFIC_INSURER" | "CASCO_INSURER"
+): string | undefined {
+  const matches = defendants.filter((d) => d.type === type);
+  return matches.length === 1 ? matches[0]!.id : undefined;
+}
+
+function coerceInsurancePaymentRecord(
+  raw: unknown,
+  defendants: TrafficInjuryDraft["parties"]["defendants"],
+  insurerType: "COMPULSORY_TRAFFIC_INSURER" | "CASCO_INSURER"
+): InsurancePaymentRecord {
+  if (!raw || typeof raw !== "object") {
+    return {
+      id: newId(),
+      paymentDate: "",
+      paymentAmount: 0,
+      liabilityLimit: 0,
+      accidentLimit: 0,
+      defendantId: findDefendantId(defendants, insurerType),
+      garameEntries: [],
+      garameEnabled: false,
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const defendantId =
+    typeof r.defendantId === "string" && r.defendantId.trim()
+      ? r.defendantId.trim()
+      : findDefendantId(defendants, insurerType);
+  return {
+    id: typeof r.id === "string" ? r.id : newId(),
+    paymentDate: typeof r.paymentDate === "string" ? r.paymentDate : "",
+    paymentAmount: typeof r.paymentAmount === "number" ? r.paymentAmount : 0,
+    liabilityLimit: typeof r.liabilityLimit === "number" ? r.liabilityLimit : 0,
+    accidentLimit: typeof r.accidentLimit === "number" ? r.accidentLimit : 0,
+    ...(defendantId ? { defendantId } : {}),
+    garameEntries: Array.isArray(r.garameEntries)
+      ? r.garameEntries.map(coerceGarameEntry)
+      : [],
+    garameEnabled: r.garameEnabled === true,
+  };
+}
+
+function coerceInsurancePayments(
+  raw: unknown,
+  defendants: TrafficInjuryDraft["parties"]["defendants"],
+  insurerType: "COMPULSORY_TRAFFIC_INSURER" | "CASCO_INSURER"
+): InsurancePaymentRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => coerceInsurancePaymentRecord(row, defendants, insurerType));
+}
+
+function ensureDefendantIds(
+  defendants: TrafficInjuryDraft["parties"]["defendants"]
+): TrafficInjuryDraft["parties"]["defendants"] {
+  return defendants.map((d) => (d.id ? d : { ...d, id: newId() }));
 }
 
 function normalizeTrafficInjuryShape(raw: Record<string, unknown>): TrafficInjuryDraft {
@@ -135,11 +233,16 @@ function normalizeTrafficInjuryShape(raw: Record<string, unknown>): TrafficInjur
     hospitalExpenses = coerceExpenseList(care.otherExpenses);
   }
 
+  const partiesRaw = (raw.parties as TrafficInjuryDraft["parties"]) ?? base.parties;
+  const parties: TrafficInjuryDraft["parties"] = {
+    ...partiesRaw,
+    defendants: ensureDefendantIds(partiesRaw.defendants ?? []),
+  };
+
   return {
     ...base,
     common: (raw.common as TrafficInjuryDraft["common"]) ?? base.common,
-    parties:
-      (raw.parties as TrafficInjuryDraft["parties"]) ?? base.parties,
+    parties,
     liability: (raw.liability as TrafficInjuryDraft["liability"]) ?? base.liability,
     disability: (raw.disability as TrafficInjuryDraft["disability"]) ?? {},
     temporaryIncapacityPeriods: Array.isArray(raw.temporaryIncapacityPeriods)
@@ -149,6 +252,16 @@ function normalizeTrafficInjuryShape(raw: Record<string, unknown>): TrafficInjur
     hospitalExpenses,
     travelExpenses,
     caregiverExpenses,
+    capitalValueDocuments: Array.isArray(raw.capitalValueDocuments)
+      ? (raw.capitalValueDocuments as TrafficInjuryDraft["capitalValueDocuments"])
+      : [],
+    zmtsPayments: coerceInsurancePayments(
+      raw.zmtsPayments,
+      parties.defendants,
+      "COMPULSORY_TRAFFIC_INSURER"
+    ),
+    cascoPayments: coerceInsurancePayments(raw.cascoPayments, parties.defendants, "CASCO_INSURER"),
+    ...(typeof raw.passivePhaseAge === "number" ? { passivePhaseAge: raw.passivePhaseAge } : {}),
     schemaVersion: CALCULATION_SCHEMA_VERSION,
   };
 }

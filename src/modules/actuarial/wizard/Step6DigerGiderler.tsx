@@ -1,4 +1,5 @@
 import { Input } from "../../../components/ui/Input";
+import { CurrencyInput } from "./shared/FormPrimitives";
 import { formTypography } from "../../../styles/formTypography";
 import type {
   TrafficInjuryFormData,
@@ -67,21 +68,19 @@ export function Step6DigerGiderler({
                 />
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
-                    <Input
-                      label="Ödenen Miktar"
-                      type="number"
-                      min={0}
-                      value={row.amount === 0 ? "" : String(row.amount)}
-                      onChange={(e) =>
-                        onChange({
-                          hospitalBills: (formData.hospitalBills ?? []).map((r, i) =>
-                            i === index
-                              ? { ...r, amount: Number(e.target.value) || 0 }
-                              : r
-                          ),
-                        })
-                      }
-                    />
+                    <div className="flex flex-col gap-1.5 w-full">
+                      <label className="text-[11px] font-normal text-gray-500 tracking-wide">Ödenen Miktar</label>
+                      <CurrencyInput
+                        value={row.amount}
+                        onChange={(v) =>
+                          onChange({
+                            hospitalBills: (formData.hospitalBills ?? []).map((r, i) =>
+                              i === index ? { ...r, amount: v } : r
+                            ),
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -153,22 +152,19 @@ export function Step6DigerGiderler({
                 />
                 <div className="col-span-2 flex gap-2 items-end">
                   <div className="flex-1">
-                    <Input
-                      label="Ödenen Miktar"
-                      type="number"
-                      min={0}
-                      value={row.amount === 0 ? "" : String(row.amount)}
-                      onChange={(e) =>
-                        onChange({
-                          caregiverExpenses: (formData.caregiverExpenses ?? []).map(
-                            (r, i) =>
-                              i === index
-                                ? { ...r, amount: Number(e.target.value) || 0 }
-                                : r
-                          ),
-                        })
-                      }
-                    />
+                    <div className="flex flex-col gap-1.5 w-full">
+                      <label className="text-[11px] font-normal text-gray-500 tracking-wide">Ödenen Miktar</label>
+                      <CurrencyInput
+                        value={row.amount}
+                        onChange={(v) =>
+                          onChange({
+                            caregiverExpenses: (formData.caregiverExpenses ?? []).map((r, i) =>
+                              i === index ? { ...r, amount: v } : r
+                            ),
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -237,21 +233,19 @@ export function Step6DigerGiderler({
                 />
                 <div className="col-span-2 flex gap-2 items-end">
                   <div className="flex-1">
-                    <Input
-                      label="Ücret"
-                      type="number"
-                      min={0}
-                      value={row.amount === 0 ? "" : String(row.amount)}
-                      onChange={(e) =>
-                        onChange({
-                          otherExpenses: (formData.otherExpenses ?? []).map((r, i) =>
-                            i === index
-                              ? { ...r, amount: Number(e.target.value) || 0 }
-                              : r
-                          ),
-                        })
-                      }
-                    />
+                    <div className="flex flex-col gap-1.5 w-full">
+                      <label className="text-[11px] font-normal text-gray-500 tracking-wide">Ücret</label>
+                      <CurrencyInput
+                        value={row.amount}
+                        onChange={(v) =>
+                          onChange({
+                            otherExpenses: (formData.otherExpenses ?? []).map((r, i) =>
+                              i === index ? { ...r, amount: v } : r
+                            ),
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"

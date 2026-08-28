@@ -2,7 +2,8 @@ import { uiText } from "../../config/uiText";
 import type { ActuarialResultPayload } from "../../services/api";
 
 const t = uiText.result;
-const fmt = (n: number) => n.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
+import { formatTRY } from "./wizard/shared/FormPrimitives";
+const fmt = formatTRY;
 
 interface WorkInjuryBreakdownProps {
   result: ActuarialResultPayload;

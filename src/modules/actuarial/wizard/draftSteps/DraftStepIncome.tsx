@@ -1,6 +1,7 @@
 import { Input } from "../../../../components/ui/Input";
 import { Select } from "../../../../components/ui/Select";
 import { Button } from "../../../../components/ui/Button";
+import { CurrencyInput } from "../shared/FormPrimitives";
 import type { CalculationDraftInput, IncomePeriod } from "../../types/calculationDraft";
 import { newId } from "../../types/calculationDraft";
 
@@ -75,13 +76,13 @@ export function DraftStepIncome({ draft, onChange }: Props) {
               value={p.endDate ?? ""}
               onChange={(e) => updatePeriod(index, { endDate: e.target.value })}
             />
-            <Input
-              label="Tutar *"
-              type="number"
-              min={0}
-              value={p.amount === 0 ? "" : String(p.amount)}
-              onChange={(e) => updatePeriod(index, { amount: Number(e.target.value) || 0 })}
-            />
+            <div className="flex flex-col gap-1.5 w-full">
+              <label className="text-[11px] font-normal text-gray-500 tracking-wide">Tutar *</label>
+              <CurrencyInput
+                value={p.amount}
+                onChange={(v) => updatePeriod(index, { amount: v })}
+              />
+            </div>
             <Select
               label="Brüt / Net *"
               value={p.amountKind}

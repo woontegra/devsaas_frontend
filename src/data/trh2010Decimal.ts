@@ -114,7 +114,7 @@ export const trh2010MaleDecimal: Trh2010DecimalTable = {
 
 /** TRH-2010 KADIN — ondalıklı bakiye ömür (yaş → yıl) */
 export const trh2010FemaleDecimal: Trh2010DecimalTable = {
-  0: 78.02,
+   0: 78.02,
   1: 77.66,
   2: 76.68,
   3: 75.70,

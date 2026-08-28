@@ -1,5 +1,6 @@
 import { Input } from "../../../../components/ui/Input";
 import { Button } from "../../../../components/ui/Button";
+import { CurrencyInput } from "../shared/FormPrimitives";
 import type { CalculationDraftInput, DateRange, ExpenseItem, PriorPayment } from "../../types/calculationDraft";
 import { isDeathType, isInjuryType, newId } from "../../types/calculationDraft";
 
@@ -260,18 +261,18 @@ export function DraftStepDisabilityExpenses({ draft, onChange }: Props) {
                 onChange({ ...draft, expenses: next });
               }}
             />
-            <Input
-              label="Tutar"
-              type="number"
-              min={0}
-              value={e.amount === 0 ? "" : String(e.amount)}
-              onChange={(ev) => {
-                const next = expenses.map((x, i) =>
-                  i === index ? { ...x, amount: Number(ev.target.value) || 0 } : x
-                );
-                onChange({ ...draft, expenses: next });
-              }}
-            />
+            <div className="flex flex-col gap-1.5 w-full">
+              <label className="text-[11px] font-normal text-gray-500 tracking-wide">Tutar</label>
+              <CurrencyInput
+                value={e.amount}
+                onChange={(v) => {
+                  const next = expenses.map((x, i) =>
+                    i === index ? { ...x, amount: v } : x
+                  );
+                  onChange({ ...draft, expenses: next });
+                }}
+              />
+            </div>
           </div>
         ))}
       </section>
@@ -302,18 +303,18 @@ export function DraftStepDisabilityExpenses({ draft, onChange }: Props) {
                 onChange({ ...draft, priorPayments: next });
               }}
             />
-            <Input
-              label="Tutar"
-              type="number"
-              min={0}
-              value={p.amount === 0 ? "" : String(p.amount)}
-              onChange={(ev) => {
-                const next = priors.map((x, i) =>
-                  i === index ? { ...x, amount: Number(ev.target.value) || 0 } : x
-                );
-                onChange({ ...draft, priorPayments: next });
-              }}
-            />
+            <div className="flex flex-col gap-1.5 w-full">
+              <label className="text-[11px] font-normal text-gray-500 tracking-wide">Tutar</label>
+              <CurrencyInput
+                value={p.amount}
+                onChange={(v) => {
+                  const next = priors.map((x, i) =>
+                    i === index ? { ...x, amount: v } : x
+                  );
+                  onChange({ ...draft, priorPayments: next });
+                }}
+              />
+            </div>
           </div>
         ))}
       </section>
