@@ -245,7 +245,8 @@ export function LiabilityStep({
   onChange,
   fieldErrors,
   showInevitability,
-}: StepProps & { showInevitability?: boolean }) {
+  hideTitle,
+}: StepProps & { showInevitability?: boolean; hideTitle?: boolean }) {
   const liability = draft.liability;
   const set = (liability: LiabilityBlock) => onChange({ ...draft, liability });
   const parties = liability.parties ?? [];
@@ -256,7 +257,7 @@ export function LiabilityStep({
 
   return (
     <FormSection
-      title="Kusur ve sorumluluk"
+      title={hideTitle ? undefined : "Kusur ve sorumluluk"}
       description="Oranlar otomatik düzeltilmez. Toplam yüzde 100 değilse uyarı üretilir."
     >
       <FormGrid>
@@ -663,14 +664,6 @@ export function BeneficiariesStep({ draft, onChange, fieldErrors }: StepProps) {
                   <option value="female">Kadın</option>
                   <option value="male">Erkek</option>
                 </TextSelect>
-              </FormField>
-              <FormField label="Eğitim durumu">
-                <TextInput
-                  value={b.educationStatus ?? ""}
-                  onChange={(e) =>
-                    set(rows.map((x, idx) => (idx === i ? { ...x, educationStatus: e.target.value } : x)))
-                  }
-                />
               </FormField>
               <div className="flex items-end">
                 <DeleteIconButton onClick={() => set(rows.filter((_, idx) => idx !== i))} />
@@ -1154,7 +1147,7 @@ export function DeathExpensesStep({ draft, onChange }: StepProps) {
   if (draft.calculationType !== "TRAFFIC_DEATH") return null;
   const block = draft.deathExpenses;
   return (
-    <FormSection title="Ölüm öncesi ve cenaze giderleri">
+    <FormSection>
       <FormGrid>
         <FormField label="Ölüm öncesi tedavi gideri">
           <CurrencyInput

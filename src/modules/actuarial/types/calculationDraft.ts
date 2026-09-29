@@ -78,6 +78,8 @@ export interface LiableParty {
 export interface LiabilityBlock {
   injuredFaultRatio: number;
   parties: LiableParty[];
+  /** Trafik: dava dışı kusur (hesap indirimine dahil edilmez) */
+  externalFaultRatio?: number;
   inevitabilityRatio?: number;
 }
 
@@ -118,6 +120,18 @@ export interface DefendantParty {
   firstName?: string;
   lastName?: string;
   organizationName?: string;
+}
+
+/** TRAFFIC_DEATH kusur sorumluları — TRAFFIC_INJURY davalı tiplerinin alt kümesi */
+export type TrafficDeathResponsibleType =
+  | "INDIVIDUAL_DRIVER"
+  | "INDIVIDUAL_VEHICLE_OWNER"
+  | "CORPORATE_VEHICLE_OWNER";
+
+export interface TrafficDeathResponsibleParty {
+  id: string;
+  type: TrafficDeathResponsibleType;
+  faultRatio: number;
 }
 
 export interface TrafficInjuryParties {
@@ -225,16 +239,21 @@ export interface InsuranceInfo {
   coverageNotes?: string;
 }
 
+export type BeneficiaryClaimantStatus = "PLAINTIFF" | "OUT_OF_CASE";
+
 export interface Beneficiary {
   id: string;
   fullName: string;
   relation: RelationType;
   birthDate: string;
   gender: Gender;
+  claimantStatus?: BeneficiaryClaimantStatus;
   educationStatus?: string;
   workStatus?: string;
   dependencyStatus?: string;
   claimsSupport?: boolean;
+  remarried?: boolean;
+  remarriageDate?: string | null;
   notes?: string;
 }
 
@@ -290,6 +309,21 @@ export interface CapitalValueDocument {
   notes?: string;
 }
 
+/**
+ * TRAFFIC_DEATH ZMTS garame satırı. İlişki claimantId üzerindedir.
+ * Mevcut mahsup tutarını değiştirmez.
+ */
+export interface DeathZmtsGarameRow {
+  claimantId: string;
+  claimantName?: string;
+  claimantStatus?: "PLAINTIFF" | "OUT_OF_CASE";
+  claimantRelation?: string;
+  paymentDate?: string;
+  paymentAmount?: number;
+  liabilityLimit?: number;
+  accidentLimit?: number;
+}
+
 /** Garame satırının bağlandığı dosya içi kişi kaydı */
 export type InsuranceGarameSubjectRef = "plaintiff";
 
@@ -333,6 +367,11 @@ export interface InsurancePaymentRecord {
   garameEntries?: InsuranceGarameEntry[];
   /** Garame hesabı bu ödeme kaydı için uygulanacak mı (varsayılan: kapalı) */
   garameEnabled?: boolean;
+  /** TRAFFIC_DEATH ZMTS: ödemenin yapıldığı davacı. Eski kayıtlarda yoktur. */
+  claimantId?: string;
+  claimantName?: string;
+  claimantRelation?: string;
+  deathGarameRows?: DeathZmtsGarameRow[];
 }
 
 export interface CareExpensesBlock {
@@ -358,6 +397,8 @@ export interface TrafficInjuryDraft extends DraftBase {
   liability: LiabilityBlock;
   disability: DisabilityBlock;
   temporaryIncapacityPeriods: TemporaryIncapacityPeriod[];
+  /** Dönemler arası boşlukları kesintisiz geçici İG olarak hesapla */
+  temporaryIncapacityIgnoreGaps?: boolean;
   accidentIncome: AccidentIncomeBlock;
   hospitalExpenses: ExpenseItem[];
   travelExpenses: ExpenseItem[];
@@ -370,22 +411,96 @@ export interface TrafficInjuryDraft extends DraftBase {
   processedPeriodEndDate?: string;
   /** Peşin sermaye değeri belgeleri */
   capitalValueDocuments: CapitalValueDocument[];
+  /** Sosyal yardım ödeneği belgeleri. PSD listesinden bağımsızdır. Eski kayıtlarda yoktur. */
+  sosyalYardimOdenekleri?: CapitalValueDocument[];
   /** ZMTS ödemeleri */
   zmtsPayments: InsurancePaymentRecord[];
   /** Kasko ödemeleri */
   cascoPayments: InsurancePaymentRecord[];
 }
 
+export type DeceasedEmploymentStatus = "WORKING" | "NOT_WORKING" | null;
+
+export type DeceasedMaritalStatus = "MARRIED" | "SINGLE" | "DIVORCED";
+
+export type DeceasedMilitaryStatus = "COMPLETED" | "NOT_COMPLETED";
+
+export type DeceasedChildEducationLevel =
+  | "preschool"
+  | "primary"
+  | "middle"
+  | "high"
+  | "university"
+  | "postgraduate"
+  | "graduate"
+  | "not_in_education"
+  | "other";
+
+export interface DeceasedChildRecord {
+  id: string;
+  gender: Gender;
+  educationLevel: DeceasedChildEducationLevel | null;
+  educationOther?: string;
+}
+
+export interface DeceasedFamilyInfo {
+  maritalStatus: DeceasedMaritalStatus | null;
+  militaryStatus: DeceasedMilitaryStatus | null;
+  militaryServiceStartDate?: string | null;
+  militaryServiceDurationMonths?: 6 | 12 | null;
+  educationStatus: DeceasedChildEducationLevel | null;
+  educationOtherDescription?: string;
+  hasChildren: boolean | null;
+  childrenCount: number;
+  children: DeceasedChildRecord[];
+}
+
+/** Kullanıcı girdisi. Oran ve tutar motor tarafından türetilir. */
+export interface MarriageProbabilityDeductionState {
+  under18ChildCount: number;
+  note?: string;
+}
+
+/** Eğitim gideri indirimi henüz parasal hesaba girmez. Not kaydı tutulur. */
+export interface EducationExpenseDeductionState {
+  notes: string;
+}
+
+export function emptyMarriageProbabilityDeduction(): MarriageProbabilityDeductionState {
+  return { under18ChildCount: 0, note: "" };
+}
+
+export function emptyEducationExpenseDeduction(): EducationExpenseDeductionState {
+  return { notes: "" };
+}
+
 export interface TrafficDeathDraft extends DraftBase {
   calculationType: "TRAFFIC_DEATH";
+  employmentStatus: DeceasedEmploymentStatus;
   deceased: DeceasedPerson;
+  deceasedFamilyInfo: DeceasedFamilyInfo;
+  accidentIncome: AccidentIncomeBlock;
+  nonWorkingSelectedIncome: number | null;
   incomePeriods: IncomePeriod[];
   beneficiaries: Beneficiary[];
   supportRelations: SupportRelation[];
   liability: LiabilityBlock;
+  deceasedFaultRate: number;
+  responsibleParties: TrafficDeathResponsibleParty[];
+  externalFaultRate: number;
+  /** @deprecated Eski davacı-bazlı kusur; restore'da yok sayılır */
+  claimantFaultRates?: Record<string, number>;
   deathExpenses: DeathExpenseBlock;
   priorPayments: PriorPayment[];
   insurance: InsuranceInfo;
+  /** Sosyal yardım ödeneği. Hesaba dahil değildir. Eski kayıtlarda yoktur. */
+  sosyalYardimOdenekleri?: CapitalValueDocument[];
+  /** Peşin sermaye değeri. Eski kayıtlarda yoktur. */
+  capitalValueDocuments?: CapitalValueDocument[];
+  zmtsPayments?: InsurancePaymentRecord[];
+  cascoPayments?: InsurancePaymentRecord[];
+  marriageProbabilityDeduction?: MarriageProbabilityDeductionState;
+  educationExpenseDeduction?: EducationExpenseDeductionState;
 }
 
 export interface WorkInjuryDraft extends DraftBase {
@@ -476,6 +591,7 @@ function emptyLiability(work = false): LiabilityBlock {
   return {
     injuredFaultRatio: 0,
     parties: [],
+    externalFaultRatio: 0,
     ...(work ? { inevitabilityRatio: 0 } : {}),
   };
 }
@@ -494,11 +610,13 @@ export function createEmptyDraft(type: CalculationType): CalculationDraft {
         liability: emptyLiability(),
         disability: {},
         temporaryIncapacityPeriods: [],
+        temporaryIncapacityIgnoreGaps: false,
         accidentIncome: { incomeMode: "minWage", fixedAmount: null, averageSources: [] },
         hospitalExpenses: [],
         travelExpenses: [],
         caregiverExpenses: [],
         capitalValueDocuments: [],
+        sosyalYardimOdenekleri: [],
         zmtsPayments: [],
         cascoPayments: [],
       };
@@ -506,15 +624,36 @@ export function createEmptyDraft(type: CalculationType): CalculationDraft {
       return {
         schemaVersion: CALCULATION_SCHEMA_VERSION,
         calculationType: "TRAFFIC_DEATH",
+        employmentStatus: null,
         common: emptyCommon(),
         deceased: { birthDate: "", deathDate: "", gender: "male" },
+        deceasedFamilyInfo: {
+          maritalStatus: null,
+          militaryStatus: null,
+          educationStatus: null,
+          educationOtherDescription: "",
+          hasChildren: null,
+          childrenCount: 0,
+          children: [],
+        },
+        accidentIncome: { incomeMode: "minWage", fixedAmount: null, averageSources: [] },
+        nonWorkingSelectedIncome: null,
         incomePeriods: [],
         beneficiaries: [],
         supportRelations: [],
         liability: emptyLiability(),
+        deceasedFaultRate: 0,
+        responsibleParties: [],
+        externalFaultRate: 0,
         deathExpenses: { otherExpenses: [] },
         priorPayments: [],
         insurance: {},
+        sosyalYardimOdenekleri: [],
+        capitalValueDocuments: [],
+        zmtsPayments: [],
+        cascoPayments: [],
+        marriageProbabilityDeduction: emptyMarriageProbabilityDeduction(),
+        educationExpenseDeduction: emptyEducationExpenseDeduction(),
       };
     case "WORK_INJURY":
       return {

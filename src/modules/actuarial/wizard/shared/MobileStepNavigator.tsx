@@ -34,19 +34,19 @@ export function MobileStepNavigator({
 
   return (
     <div className="lg:hidden mb-3">
-      <div className="rounded-[11px] border border-[#D9E5E3] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(15,95,99,0.04)]">
+      <div className="rounded-[11px] border border-[#DCE3E8] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(36,55,70,0.04)]">
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[11.5px] font-normal text-[#6B7280] tabular-nums">
+            <p className="text-[11.5px] font-normal text-[#66727F] tabular-nums">
               {stepIndex + 1} / {totalSteps}
             </p>
-            <p className="text-[13px] font-medium text-[#22313F] truncate mt-0.5">
+            <p className="text-[13px] font-medium text-[#1F2933] truncate mt-0.5">
               {current?.title ?? "—"}
             </p>
           </div>
           <button
             type="button"
-            className="shrink-0 inline-flex items-center gap-1 min-h-[36px] px-2.5 rounded-[9px] border border-[#D9E5E3] text-[12.5px] font-medium text-[#22313F] hover:bg-[#EAF4F3]/60"
+            className="shrink-0 inline-flex items-center gap-1 min-h-[36px] px-2.5 rounded-[9px] border border-[#DCE3E8] text-[12.5px] font-medium text-[#1F2933] hover:bg-[#EEF2F4]/60"
             aria-expanded={open}
             aria-controls={controlsId}
             onClick={() => setOpen(true)}
@@ -88,28 +88,30 @@ export function MobileStepNavigator({
                   setOpen(false);
                 }}
                 className={`w-full flex items-center gap-3 rounded-[10px] px-2.5 py-2.5 mb-0.5 min-h-[48px] text-left transition-colors duration-200 ${
-                  active ? "bg-[#EAF4F3] border border-[#0F5F63]/25" : "hover:bg-[#F4F7F7] border border-transparent"
+                  active ? "bg-[#EEF2F4] border border-[#243746]/25" : "hover:bg-[#F5F7FA] border border-transparent"
                 }`}
               >
                 <span
                   className={`h-6 w-6 shrink-0 rounded-full text-[12px] font-medium flex items-center justify-center ${
                     active
-                      ? "bg-[#0F5F63] text-white"
+                      ? "bg-[#243746] text-white"
                       : done
                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                        : "bg-[#EAF4F3] text-[#6B7280]"
+                        : missing || errCount
+                          ? "accent-step-num"
+                          : "bg-[#EEF2F4] text-[#66727F]"
                   }`}
                 >
                   {done && !active ? "✓" : i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-[13px] font-medium truncate ${active ? "text-[#0B474A]" : "text-[#22313F]"}`}>
+                  <p className={`text-[13px] font-medium truncate ${active ? "text-[#192833]" : "text-[#1F2933]"}`}>
                     {s.title}
                   </p>
-                  <p className="text-[12px] font-normal text-[#6B7280] mt-0.5">{status}</p>
+                  <p className="text-[12px] font-normal text-[#66727F] mt-0.5">{status}</p>
                 </div>
                 {(missing || errCount > 0) && !done && (
-                  <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" aria-hidden />
+                  <span className="h-2 w-2 rounded-full bg-brand-accent shrink-0" aria-hidden />
                 )}
                 {done && !active && (
                   <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden />

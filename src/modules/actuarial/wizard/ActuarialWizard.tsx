@@ -11,6 +11,7 @@ import type {
   ValidationIssue,
 } from "../types/calculationDraft";
 import { CALCULATION_TYPE_LABELS } from "../types/calculationDraft";
+import { countBeneficiariesByClaimantStatus } from "../utils/beneficiaryClaimantStatus";
 import type { TrafficInjuryCalculationResult } from "../types/trafficInjuryResult";
 import type {
   CalculationReviewSummaryResponse,
@@ -37,12 +38,52 @@ export interface ActuarialWizardProps {
   onValidate: () => void;
   onConfirmAndRun: () => void;
   onDownloadWordReport: () => void;
+  onSaveCalculation?: () => void;
+  canSaveCalculation?: boolean;
+  savingCalculation?: boolean;
+  saveCalculationError?: string | null;
+  calculationSaved?: boolean;
+  onSaveFile?: () => void;
+  savingFile?: boolean;
+  saveFileError?: string | null;
+  fileSaved?: boolean;
+  currentSavedCalculationId?: string | null;
+  savedDisplayName?: string | null;
   onSaveDraft: () => void;
   onClearDraft: () => void;
   draftSaveStatus: DraftSaveStatus;
   lastSavedAt: string | null;
   onChangeTypeRequest: () => void;
   onNewFile: () => void;
+  onOpenSavedFiles?: () => void;
+  onBeforeStepAdvance?: (fromStepId: string, toStepId: string) => Promise<boolean>;
+  validationFieldHighlight?: boolean;
+  trafficDeathSupportResult?: import("../types/trafficDeathSupportPeriods").TrafficDeathSupportPeriodsResponse | null;
+  trafficDeathRunResult?: import("../types/trafficDeathResult").TrafficDeathCalculationResult | null;
+  onTrafficDeathSupportResult?: (
+    result: import("../types/trafficDeathSupportPeriods").TrafficDeathSupportPeriodsResponse
+  ) => void;
+  onTrafficDeathReport?: (format: "docx" | "pdf") => void;
+  trafficDeathReporting?: "docx" | "pdf" | null;
+}
+
+function FileSummaryLines({ draft }: { draft: CalculationDraft }) {
+  if (draft.calculationType === "TRAFFIC_DEATH") {
+    return (
+      <>
+        <p>Müteveffa: {draft.deceased.fullName || "—"}</p>
+        <p>Olay: {draft.common.eventDate || "—"}</p>
+        <p>Hesap: {draft.common.calculationDate || "—"}</p>
+      </>
+    );
+  }
+  return (
+    <>
+      <p>Dosya: {draft.common.internalFileName || "—"}</p>
+      <p>Olay: {draft.common.eventDate || "—"}</p>
+      <p>Hesap: {draft.common.calculationDate || "—"}</p>
+    </>
+  );
 }
 
 function TypeSummary({ draft }: { draft: CalculationDraft }) {
@@ -70,11 +111,12 @@ function TypeSummary({ draft }: { draft: CalculationDraft }) {
     );
   }
   if (draft.calculationType === "TRAFFIC_DEATH") {
+    const counts = countBeneficiariesByClaimantStatus(draft.beneficiaries);
     return (
       <>
         <p>Müteveffa: {draft.deceased.fullName || "—"}</p>
-        <p>Hak sahibi: {draft.beneficiaries.length}</p>
-        <p>Destek ilişkisi: {draft.supportRelations.length}</p>
+        <p>Davacılar: {counts.plaintiff}</p>
+        <p>Dava dışı: {counts.outOfCase}</p>
         <p>Gelir dönemi: {draft.incomePeriods.length}</p>
         <p>Önceki ödeme: {draft.priorPayments.length}</p>
       </>
@@ -134,12 +176,31 @@ export function ActuarialWizard({
   onValidate,
   onConfirmAndRun,
   onDownloadWordReport,
+  onSaveCalculation,
+  canSaveCalculation = false,
+  savingCalculation = false,
+  saveCalculationError = null,
+  calculationSaved = false,
+  onSaveFile,
+  savingFile = false,
+  saveFileError = null,
+  fileSaved: _fileSaved = false,
+  currentSavedCalculationId = null,
+  savedDisplayName = null,
   onSaveDraft,
   onClearDraft,
   draftSaveStatus,
   lastSavedAt,
   onChangeTypeRequest,
   onNewFile,
+  onOpenSavedFiles,
+  onBeforeStepAdvance,
+  validationFieldHighlight = false,
+  trafficDeathSupportResult = null,
+  trafficDeathRunResult = null,
+  onTrafficDeathSupportResult,
+  onTrafficDeathReport,
+  trafficDeathReporting = null,
 }: ActuarialWizardProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const steps = getWizardSteps(draft.calculationType);
@@ -163,12 +224,34 @@ export function ActuarialWizard({
   const warnTotal = validation?.warnings.length ?? 0;
   const missingTotal = validation?.missingSections.length ?? 0;
   const activeTitle = isReview ? "Kontrol ve Ödeme" : current?.title ?? "—";
+  const hideStepPageTitle =
+    draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY";
+  const showResultPhase =
+    isReview && reviewFlowPhase === "result" && runResult != null && draft.calculationType === "TRAFFIC_INJURY";
+  const showSaveCalculation = showResultPhase && canSaveCalculation && !!onSaveCalculation;
+  const showSaveFileButton =
+    (draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY") &&
+    canSaveCalculation &&
+    !!onSaveFile;
+  const permanentSaveLabel = currentSavedCalculationId
+    ? "Değişiklikleri Kaydet"
+    : "Dosyayı Kaydet";
+  const activeSavedFileLabel =
+    currentSavedCalculationId && savedDisplayName
+      ? `Kayıtlı dosya: ${savedDisplayName}`
+      : null;
 
   const goPrev = () => {
     if (stepIndex > 0) onStepChange(allIds[stepIndex - 1]!);
   };
-  const goNext = () => {
-    if (stepIndex < allIds.length - 1) onStepChange(allIds[stepIndex + 1]!);
+  const goNext = async () => {
+    if (stepIndex >= allIds.length - 1) return;
+    const nextId = allIds[stepIndex + 1]!;
+    if (onBeforeStepAdvance) {
+      const allowed = await onBeforeStepAdvance(stepId, nextId);
+      if (!allowed) return;
+    }
+    onStepChange(nextId);
   };
 
   const StepComponent = current?.Component;
@@ -178,12 +261,15 @@ export function ActuarialWizard({
       {/* ─── Header ───────────────────────────────────────────────── */}
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[20px] sm:text-[22px] font-semibold text-[#22313F] tracking-[-0.02em] leading-snug line-clamp-2">
+          <h1 className="text-[20px] sm:text-[22px] font-semibold text-[#1F2933] tracking-[-0.02em] leading-snug line-clamp-2">
             {CALCULATION_TYPE_LABELS[draft.calculationType]}
           </h1>
-          <p className="mt-1 text-[12px] font-normal text-[#6B7280]">
+          <p className="mt-1 text-[12px] font-normal text-[#66727F]">
             {draftStatusLabel(draftSaveStatus, lastSavedAt)}
           </p>
+          {activeSavedFileLabel && (
+            <p className="mt-1 text-[12px] font-medium text-[#243746]">{activeSavedFileLabel}</p>
+          )}
         </div>
 
         {/* Mobile: ⋮ menu */}
@@ -194,7 +280,7 @@ export function ActuarialWizard({
                 {...buttonProps}
                 ref={buttonRef}
                 type="button"
-                className="min-h-[40px] min-w-[40px] rounded-[10px] border border-[#D9E5E3] bg-white text-[#6B7280] flex items-center justify-center hover:bg-[#EAF4F3]/50"
+                className="min-h-[40px] min-w-[40px] rounded-[10px] border border-[#DCE3E8] bg-white text-[#66727F] flex items-center justify-center hover:bg-[#EEF2F4]/50"
                 aria-label="İşlemler"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -208,6 +294,9 @@ export function ActuarialWizard({
             {(close) => (
               <>
                 <MenuItem onClick={() => { close(); onNewFile(); }}>Yeni dosya</MenuItem>
+                {onOpenSavedFiles && (
+                  <MenuItem onClick={() => { close(); onOpenSavedFiles(); }}>Kayıtlı Dosyalar</MenuItem>
+                )}
                 <MenuItem onClick={() => { close(); onChangeTypeRequest(); }}>Hesap türünü değiştir</MenuItem>
                 <MenuItem onClick={() => { close(); onSaveDraft(); }}>Taslağı kaydet</MenuItem>
                 <MenuItem danger onClick={() => { close(); onClearDraft(); }}>Taslağı temizle</MenuItem>
@@ -221,6 +310,11 @@ export function ActuarialWizard({
           <button type="button" onClick={onNewFile} className="btn-secondary min-h-[40px] px-4">
             Yeni dosya
           </button>
+          {onOpenSavedFiles && (
+            <button type="button" onClick={onOpenSavedFiles} className="btn-secondary min-h-[40px] px-4">
+              Kayıtlı Dosyalar
+            </button>
+          )}
           <button type="button" onClick={onChangeTypeRequest} className="btn-secondary min-h-[40px] px-4">
             Hesap türünü değiştir
           </button>
@@ -243,17 +337,17 @@ export function ActuarialWizard({
       />
 
       {/* ─── Mobile compact summary ─────────────────────────────── */}
-      <div className="lg:hidden mb-3 rounded-[11px] border border-[#D9E5E3] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(15,95,99,0.04)]">
+      <div className="lg:hidden mb-3 rounded-[11px] border border-[#DCE3E8] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(36,55,70,0.04)]">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 text-[12.5px] font-normal text-[#22313F] space-y-0.5">
+          <div className="min-w-0 text-[12.5px] font-normal text-[#1F2933] space-y-0.5">
             <p className="truncate">{activeTitle}</p>
-            <p className="text-[12px] text-[#6B7280]">
+            <p className="text-[12px] text-[#66727F]">
               Eksik {missingTotal || "—"} · Uyarı {warnTotal} · Hata {errTotal}
             </p>
           </div>
           <button
             type="button"
-            className="shrink-0 text-[12.5px] font-medium text-[#0F5F63] min-h-[36px] px-2"
+            className="shrink-0 text-[12.5px] font-medium text-[#243746] min-h-[36px] px-2"
             aria-expanded={summaryOpen}
             onClick={() => setSummaryOpen((v) => !v)}
           >
@@ -263,9 +357,7 @@ export function ActuarialWizard({
         {summaryOpen && (
           <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
             <SummaryCard title="Dosya özeti">
-              <p>Dosya: {draft.common.internalFileName || "—"}</p>
-              <p>Olay: {draft.common.eventDate || "—"}</p>
-              <p>Hesap: {draft.common.calculationDate || "—"}</p>
+              <FileSummaryLines draft={draft} />
             </SummaryCard>
             <SummaryCard title="Türe özel özet">
               <TypeSummary draft={draft} />
@@ -280,7 +372,7 @@ export function ActuarialWizard({
       {/* ─── 3-kolon grid ───────────────────────────────────────── */}
       <div className="wizard-desktop-grid">
         {/* Left steps — desktop only */}
-        <nav className="hidden lg:block lg:sticky lg:top-[4rem] self-start rounded-[11px] border border-[#D9E5E3] bg-white p-2 shadow-[0_1px_4px_rgba(15,95,99,0.05)] max-h-[calc(100vh-6rem)] overflow-y-auto">
+        <nav className="hidden lg:block lg:sticky lg:top-[4rem] self-start rounded-[11px] border border-[#DCE3E8] bg-white p-2 shadow-[0_1px_4px_rgba(36,55,70,0.05)] max-h-[calc(100vh-6rem)] overflow-y-auto">
           {navSteps.map((s, i) => {
             const active = s.id === stepId;
             const done = validation?.completedSections.includes(s.sectionKey);
@@ -299,20 +391,20 @@ export function ActuarialWizard({
                 onClick={() => onStepChange(s.id)}
                 className={`w-full text-left rounded-[9px] px-2.5 py-2 mb-0.5 border transition-colors duration-200 min-h-[44px] ${
                   active
-                    ? "bg-[#0F5F63] text-white border-[#0F5F63]"
-                    : "bg-white border-transparent hover:bg-[#EAF4F3]/60 text-[#22313F]"
+                    ? "bg-[#243746] text-white border-[#243746]"
+                    : "bg-white border-transparent hover:bg-[#EEF2F4]/60 text-[#1F2933]"
                 }`}
               >
                 <div className="flex items-start gap-2">
                   <span
-                    className={`mt-0.5 h-5 w-5 shrink-0 rounded-full text-[11px] font-medium flex items-center justify-center ${
+                    className={`mt-0.5 h-5 w-5 shrink-0 rounded-full text-[11px] font-semibold flex items-center justify-center ${
                       active
                         ? "bg-white/20 text-white"
                         : done
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : missing || errCount
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-[#EAF4F3] text-[#6B7280]"
+                            ? "accent-step-num"
+                            : "bg-[#EEF2F4] text-[#66727F]"
                     }`}
                   >
                     {done && !active ? "✓" : i + 1}
@@ -323,7 +415,7 @@ export function ActuarialWizard({
                     </p>
                     <p
                       className={`text-[11.5px] font-normal mt-0.5 leading-snug ${
-                        active ? "text-white/80" : done ? "text-emerald-600" : "text-[#6B7280]"
+                        active ? "text-white/80" : done ? "text-emerald-600" : "text-[#66727F]"
                       }`}
                     >
                       {status}
@@ -337,9 +429,9 @@ export function ActuarialWizard({
 
         {/* Center form */}
         <main className="min-w-0 space-y-4">
-          {!isReview && current && (
+          {!isReview && current && !hideStepPageTitle && (
             <div className="mb-1 hidden lg:block">
-              <h2 className="text-[16px] font-medium text-[#22313F] tracking-[-0.01em]">{current.title}</h2>
+              <h2 className="text-[16px] font-medium text-[#1F2933] tracking-[-0.01em]">{current.title}</h2>
             </div>
           )}
           {isReview ? (
@@ -350,7 +442,6 @@ export function ActuarialWizard({
               running={running}
               runResult={runResult}
               runError={runError}
-              reporting={reporting}
               reportError={reportError}
               reviewSummary={reviewSummary}
               reviewSummaryLoading={reviewSummaryLoading}
@@ -358,14 +449,22 @@ export function ActuarialWizard({
               reviewFlowPhase={reviewFlowPhase}
               onValidate={onValidate}
               onConfirmAndRun={onConfirmAndRun}
-              onDownloadWordReport={onDownloadWordReport}
+              trafficDeathSupportResult={trafficDeathSupportResult}
+              trafficDeathRunResult={trafficDeathRunResult}
+              onTrafficDeathReport={onTrafficDeathReport}
+              trafficDeathReporting={trafficDeathReporting}
+              saveCalculationError={saveCalculationError}
+              calculationSaved={calculationSaved}
               onGoToStep={onStepChange}
             />
           ) : StepComponent ? (
             <StepComponent
               draft={draft}
               onChange={onDraftChange}
-              fieldErrors={fieldErrors.map((e) => ({ field: e.field, message: e.message }))}
+              fieldErrors={fieldErrors.map((e) => ({ field: e.field, message: e.message, code: e.code }))}
+              validationFieldHighlight={validationFieldHighlight}
+              trafficDeathSupportResult={trafficDeathSupportResult}
+              onTrafficDeathSupportResult={onTrafficDeathSupportResult}
             />
           ) : null}
 
@@ -379,15 +478,20 @@ export function ActuarialWizard({
               ))}
             </div>
           )}
+          {saveFileError &&
+            (draft.calculationType === "TRAFFIC_DEATH" ||
+              draft.calculationType === "TRAFFIC_INJURY") && (
+            <div className="rounded-[12px] border border-red-200 bg-red-50 p-4 text-[13px] text-red-800">
+              {saveFileError}
+            </div>
+          )}
         </main>
 
         {/* Right summary */}
         <aside className="wizard-summary-aside lg:sticky lg:top-[4rem] self-start">
           <SummaryCard title="Dosya özeti">
             <p>Tür: {CALCULATION_TYPE_LABELS[draft.calculationType]}</p>
-            <p>Dosya: {draft.common.internalFileName || "—"}</p>
-            <p>Olay: {draft.common.eventDate || "—"}</p>
-            <p>Hesap: {draft.common.calculationDate || "—"}</p>
+            <FileSummaryLines draft={draft} />
           </SummaryCard>
           <SummaryCard title="İlerleme">
             <p className="font-medium text-slate-800">
@@ -396,7 +500,7 @@ export function ActuarialWizard({
             <p className="text-slate-500">%{progressPct} tamamlandı</p>
             <ProgressBar value={progressPct} />
             <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+              <span className="accent-badge">
                 Eksik: {missingTotal || "—"}
               </span>
               <span className="inline-flex items-center rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
@@ -417,7 +521,7 @@ export function ActuarialWizard({
       </div>
 
       {/* ─── Mobile action bar ──────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#D9E5E3] bg-white lg:hidden pb-[env(safe-area-inset-bottom)]">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#DCE3E8] bg-white lg:hidden pb-[env(safe-area-inset-bottom)]">
         <div className="px-4 pt-2.5 pb-2.5">
           <div className="flex items-center justify-between gap-2 mb-2 text-[13px] font-normal text-slate-500 tabular-nums">
             <span>{stepIndex + 1} / {allIds.length}</span>
@@ -425,15 +529,48 @@ export function ActuarialWizard({
           </div>
           <ProgressBar value={progressPct} thin />
           <div className="mt-2.5 flex items-center gap-2">
+            {showSaveFileButton && (
+              <button
+                type="button"
+                onClick={onSaveFile}
+                disabled={savingFile}
+                className="btn-secondary min-h-[44px] px-3 shrink-0 text-[13px]"
+              >
+                {savingFile ? "Kaydediliyor…" : permanentSaveLabel}
+              </button>
+            )}
             <button
               type="button"
               onClick={goPrev}
               disabled={stepIndex === 0}
               className="btn-secondary min-h-[44px] px-4 shrink-0"
             >
-              Geri
+              {showResultPhase ? "Önceki" : "Geri"}
             </button>
-            {!isReview ? (
+            {showResultPhase ? (
+              <>
+                {showSaveCalculation && (
+                  <button
+                    type="button"
+                    onClick={onSaveCalculation}
+                    disabled={savingCalculation || calculationSaved}
+                    className="btn-primary min-h-[44px] px-4 flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {calculationSaved ? "Kaydedildi" : savingCalculation ? "Kaydediliyor…" : "Hesaplamayı Kaydet"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onDownloadWordReport}
+                  disabled={reporting}
+                  className={`min-h-[44px] px-4 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    showSaveCalculation ? "btn-secondary flex-1" : "btn-primary flex-1"
+                  }`}
+                >
+                  {reporting ? "Rapor…" : "Word Raporu Oluştur"}
+                </button>
+              </>
+            ) : !isReview ? (
               <button
                 type="button"
                 onClick={goNext}
@@ -456,9 +593,19 @@ export function ActuarialWizard({
       </div>
 
       {/* ─── Desktop action bar ─────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#D9E5E3] bg-white hidden lg:block shadow-[0_-2px_10px_rgba(15,95,99,0.05)]">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#DCE3E8] bg-white hidden lg:block shadow-[0_-2px_10px_rgba(36,55,70,0.05)]">
         <div className="app-workspace wizard-action-bar-inner flex items-center gap-4 py-3">
           <div className="flex flex-wrap gap-2 shrink-0">
+            {showSaveFileButton && (
+              <button
+                type="button"
+                onClick={onSaveFile}
+                disabled={savingFile}
+                className="btn-secondary min-h-[40px] px-4"
+              >
+                {savingFile ? "Kaydediliyor…" : permanentSaveLabel}
+              </button>
+            )}
             <button type="button" onClick={onSaveDraft} className="btn-secondary min-h-[40px] px-4">
               Taslağı Kaydet
             </button>
@@ -468,6 +615,11 @@ export function ActuarialWizard({
           </div>
 
           <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0 px-1">
+            {activeSavedFileLabel && (
+              <p className="text-[12px] font-medium text-[#243746] truncate max-w-full">
+                {activeSavedFileLabel}
+              </p>
+            )}
             <div className="flex items-center gap-2 text-[14px] font-normal text-slate-600 tabular-nums">
               <span className="font-medium text-slate-800">
                 {stepIndex + 1} / {allIds.length} adım
@@ -489,19 +641,48 @@ export function ActuarialWizard({
             >
               Önceki
             </button>
-            {!isReview && (
-              <button type="button" onClick={goNext} className="btn-primary min-h-[40px] px-4">
-                Sonraki
-              </button>
+            {showResultPhase ? (
+              <>
+                {showSaveCalculation && (
+                  <button
+                    type="button"
+                    onClick={onSaveCalculation}
+                    disabled={savingCalculation || calculationSaved}
+                    className="btn-primary min-h-[40px] px-5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {calculationSaved ? "Kaydedildi" : savingCalculation ? "Kaydediliyor…" : "Hesaplamayı Kaydet"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onDownloadWordReport}
+                  disabled={reporting}
+                  className={`min-h-[40px] px-5 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    showSaveCalculation ? "btn-secondary" : "btn-primary"
+                  }`}
+                >
+                  {reporting ? "Rapor hazırlanıyor…" : "Word Raporu Oluştur"}
+                </button>
+              </>
+            ) : (
+              <>
+                {!isReview && (
+                  <button type="button" onClick={goNext} className="btn-primary min-h-[40px] px-4">
+                    Sonraki
+                  </button>
+                )}
+                {!showResultPhase && (
+                  <button
+                    type="button"
+                    onClick={() => { onStepChange(reviewId); onValidate(); }}
+                    disabled={validating || reviewSummaryLoading || running}
+                    className="btn-primary min-h-[40px] px-4"
+                  >
+                    {validating ? "Kontrol…" : "Verileri Kontrol Et"}
+                  </button>
+                )}
+              </>
             )}
-            <button
-              type="button"
-              onClick={() => { onStepChange(reviewId); onValidate(); }}
-              disabled={validating || reviewSummaryLoading}
-              className="btn-primary min-h-[40px] px-4"
-            >
-              {validating ? "Kontrol…" : "Verileri Kontrol Et"}
-            </button>
           </div>
         </div>
       </div>

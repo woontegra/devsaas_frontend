@@ -107,11 +107,18 @@ export interface TrafficInjuryCalculationResult {
       principalPlusInterest: number;
     }>;
   };
+  temporaryIncapacityGapIgnored?: boolean;
+  temporaryIncapacityEffectiveRange?: { startDate: string; endDate: string } | null;
   warnings: string[];
 }
 
 export interface CalculationRunResponse {
   valid: boolean;
   warnings: { code: string; message: string }[];
-  result: TrafficInjuryCalculationResult;
+  result: TrafficInjuryCalculationResult | import("./trafficDeathResult").TrafficDeathCalculationResult;
+  access?: {
+    code: string;
+    inputHash: string | null;
+    calculationHashVersion: number;
+  };
 }

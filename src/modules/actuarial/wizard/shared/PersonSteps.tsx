@@ -1,5 +1,9 @@
-import type { CalculationDraft, PersonBase } from "../../types/calculationDraft";
+import type { CalculationDraft, PersonBase, TrafficDeathDraft } from "../../types/calculationDraft";
+import type { DeceasedChildEducationLevel } from "../../types/calculationDraft";
 import { FormField, FormGrid, FormSection, TextInput, TextSelect, TextTextarea } from "../shared/FormPrimitives";
+import { DeceasedPersonalFamilySection } from "./DeceasedPersonalFamilySection";
+import { CHILD_EDUCATION_OPTIONS } from "./segmentedChoice";
+import { patchDeceasedFamilyInfo, patchDeceasedGender } from "../../utils/deceasedFamilyUtils";
 import type { StepProps } from "../shared/wizardTypes";
 import { errorFor } from "../shared/wizardTypes";
 
@@ -10,6 +14,7 @@ function PersonFields({
   deathDate,
   onDeathDate,
   showMarital,
+  showExtendedFields = true,
 }: {
   person: PersonBase;
   onPatch: (p: Partial<PersonBase>) => void;
@@ -17,6 +22,7 @@ function PersonFields({
   deathDate?: string;
   onDeathDate?: (v: string) => void;
   showMarital?: boolean;
+  showExtendedFields?: boolean;
 }) {
   return (
     <FormGrid>
@@ -40,27 +46,31 @@ function PersonFields({
           <option value="female">Kadın</option>
         </TextSelect>
       </FormField>
-      <FormField label="Meslek">
-        <TextInput value={person.occupation ?? ""} onChange={(e) => onPatch({ occupation: e.target.value })} />
-      </FormField>
-      <FormField label="Çalışma durumu">
-        <TextInput
-          value={person.employmentStatus ?? ""}
-          onChange={(e) => onPatch({ employmentStatus: e.target.value })}
-        />
-      </FormField>
-      <FormField label="Emeklilik durumu">
-        <TextInput
-          value={person.retirementStatus ?? ""}
-          onChange={(e) => onPatch({ retirementStatus: e.target.value })}
-        />
-      </FormField>
-      <FormField label="Sigortalılık durumu">
-        <TextInput
-          value={person.insuranceStatus ?? ""}
-          onChange={(e) => onPatch({ insuranceStatus: e.target.value })}
-        />
-      </FormField>
+      {showExtendedFields && (
+        <>
+          <FormField label="Meslek">
+            <TextInput value={person.occupation ?? ""} onChange={(e) => onPatch({ occupation: e.target.value })} />
+          </FormField>
+          <FormField label="Çalışma durumu">
+            <TextInput
+              value={person.employmentStatus ?? ""}
+              onChange={(e) => onPatch({ employmentStatus: e.target.value })}
+            />
+          </FormField>
+          <FormField label="Emeklilik durumu">
+            <TextInput
+              value={person.retirementStatus ?? ""}
+              onChange={(e) => onPatch({ retirementStatus: e.target.value })}
+            />
+          </FormField>
+          <FormField label="Sigortalılık durumu">
+            <TextInput
+              value={person.insuranceStatus ?? ""}
+              onChange={(e) => onPatch({ insuranceStatus: e.target.value })}
+            />
+          </FormField>
+        </>
+      )}
       {showMarital && "maritalStatus" in person && (
         <FormField label="Medeni durum">
           <TextInput
@@ -80,21 +90,109 @@ export function InjuredPersonStep(_props: StepProps) {
 
 export function DeceasedStep({ draft, onChange, fieldErrors }: StepProps) {
   if (draft.calculationType !== "TRAFFIC_DEATH") return null;
-  const p = draft.deceased;
+  const td = draft as TrafficDeathDraft;
+  const p = td.deceased;
+  const c = td.common;
   return (
-    <FormSection title="Müteveffa bilgileri">
-      <PersonFields
-        person={p}
-        fieldErrors={fieldErrors}
-        deathDate={p.deathDate}
-        onDeathDate={(deathDate) => onChange({ ...draft, deceased: { ...p, deathDate } })}
-        showMarital
-        onPatch={(patch) => onChange({ ...draft, deceased: { ...p, ...patch } })}
-      />
-      <FormField label="Açıklama">
-        <TextTextarea value={p.notes ?? ""} onChange={(e) => onChange({ ...draft, deceased: { ...p, notes: e.target.value } })} />
-      </FormField>
-    </FormSection>
+    <div className="space-y-5">
+      <FormSection title="Olay ve hesap tarihleri">
+        <FormGrid>
+          <FormField label="Olay tarihi" required error={errorFor(fieldErrors, "common.eventDate")}>
+            <TextInput
+              type="date"
+              value={c.eventDate}
+              onChange={(e) => onChange({ ...td, common: { ...c, eventDate: e.target.value } })}
+            />
+          </FormField>
+          <FormField label="Hesap tarihi" required error={errorFor(fieldErrors, "common.calculationDate")}>
+            <TextInput
+              type="date"
+              value={c.calculationDate}
+              onChange={(e) => onChange({ ...td, common: { ...c, calculationDate: e.target.value } })}
+            />
+          </FormField>
+        </FormGrid>
+      </FormSection>
+      <FormSection title="Müteveffa bilgileri">
+        <FormGrid>
+          <FormField label="Ad soyad">
+            <TextInput
+              value={p.fullName ?? ""}
+              onChange={(e) => onChange({ ...td, deceased: { ...p, fullName: e.target.value } })}
+            />
+          </FormField>
+          <FormField label="Doğum tarihi" required error={errorFor(fieldErrors, "deceased.birthDate")}>
+            <TextInput
+              type="date"
+              value={p.birthDate}
+              onChange={(e) => onChange({ ...td, deceased: { ...p, birthDate: e.target.value } })}
+            />
+          </FormField>
+        </FormGrid>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2.5 mt-2.5">
+          <FormField label="Ölüm tarihi" required error={errorFor(fieldErrors, "deceased.deathDate")}>
+            <TextInput
+              type="date"
+              value={p.deathDate}
+              onChange={(e) => onChange({ ...td, deceased: { ...p, deathDate: e.target.value } })}
+            />
+          </FormField>
+          <FormField label="Cinsiyet" required error={errorFor(fieldErrors, "deceased.gender")}>
+            <TextSelect
+              value={p.gender}
+              onChange={(e) => {
+                const gender = e.target.value as "male" | "female";
+                if (gender !== p.gender) {
+                  onChange(patchDeceasedGender({ ...td, deceased: { ...p, gender } }, gender));
+                  return;
+                }
+                onChange({ ...td, deceased: { ...p, gender } });
+              }}
+            >
+              <option value="male">Erkek</option>
+              <option value="female">Kadın</option>
+            </TextSelect>
+          </FormField>
+          <FormField label="Öğrenim Durumu">
+            <TextSelect
+              value={td.deceasedFamilyInfo.educationStatus ?? ""}
+              onChange={(e) => {
+                const v = e.target.value as DeceasedChildEducationLevel | "";
+                onChange(
+                  patchDeceasedFamilyInfo(td, {
+                    educationStatus: v || null,
+                    educationOtherDescription:
+                      v === "other" ? td.deceasedFamilyInfo.educationOtherDescription ?? "" : "",
+                  })
+                );
+              }}
+            >
+              <option value="">Seçiniz</option>
+              {CHILD_EDUCATION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </TextSelect>
+          </FormField>
+        </div>
+        {td.deceasedFamilyInfo.educationStatus === "other" && (
+          <div className="mt-2.5">
+            <FormField label="Diğer (açıklama)">
+              <TextInput
+                value={td.deceasedFamilyInfo.educationOtherDescription ?? ""}
+                onChange={(e) =>
+                  onChange(
+                    patchDeceasedFamilyInfo(td, { educationOtherDescription: e.target.value })
+                  )
+                }
+              />
+            </FormField>
+          </div>
+        )}
+        <DeceasedPersonalFamilySection draft={td} onChange={onChange} fieldErrors={fieldErrors} />
+      </FormSection>
+    </div>
   );
 }
 

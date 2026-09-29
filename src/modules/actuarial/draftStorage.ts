@@ -9,6 +9,13 @@ import {
   type InsurancePaymentRecord,
   newId,
 } from "./types/calculationDraft";
+import { coerceTrafficDeathBeneficiaries } from "./utils/beneficiaryClaimantStatus";
+import { coerceDeceasedFamilyInfo } from "./utils/deceasedFamilyUtils";
+import { coerceResponsibleParties } from "./utils/trafficDeathFaultRates";
+import {
+  coerceEducationExpenseDeduction,
+  coerceMarriageProbabilityDeduction,
+} from "./utils/marriageProbability";
 
 export type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -28,6 +35,55 @@ export type DraftLoadResult =
 
 export function storageKeyFor(type: CalculationType): string {
   return KEYS[type];
+}
+
+/** Kayıtlı TRAFFIC_DEATH snapshot'ını wizard draft'ına coerce eder */
+export function hydrateTrafficDeathDraft(
+  raw: Partial<import("./types/calculationDraft").TrafficDeathDraft>
+): import("./types/calculationDraft").TrafficDeathDraft {
+  const base = createEmptyDraft("TRAFFIC_DEATH") as import("./types/calculationDraft").TrafficDeathDraft;
+  const rest = { ...raw };
+  delete rest.claimantFaultRates;
+  const beneficiaries = coerceTrafficDeathBeneficiaries(rest.beneficiaries ?? []);
+  const externalFaultRate =
+    typeof rest.externalFaultRate === "number" && !Number.isNaN(rest.externalFaultRate)
+      ? rest.externalFaultRate
+      : typeof rest.liability?.externalFaultRatio === "number"
+        ? rest.liability.externalFaultRatio
+        : 0;
+  const deceasedFaultRate =
+    typeof rest.deceasedFaultRate === "number" && !Number.isNaN(rest.deceasedFaultRate)
+      ? rest.deceasedFaultRate
+      : 0;
+
+  return {
+    ...base,
+    ...rest,
+    schemaVersion: CALCULATION_SCHEMA_VERSION,
+    calculationType: "TRAFFIC_DEATH",
+    employmentStatus: rest.employmentStatus ?? null,
+    deceased: { ...base.deceased, ...rest.deceased },
+    accidentIncome: rest.accidentIncome ?? base.accidentIncome,
+    nonWorkingSelectedIncome: rest.nonWorkingSelectedIncome ?? null,
+    beneficiaries,
+    deceasedFamilyInfo: coerceDeceasedFamilyInfo(rest.deceasedFamilyInfo),
+    incomePeriods: rest.incomePeriods ?? [],
+    supportRelations: rest.supportRelations ?? [],
+    liability: rest.liability ?? base.liability,
+    deceasedFaultRate,
+    responsibleParties: coerceResponsibleParties(rest.responsibleParties),
+    externalFaultRate,
+    deathExpenses: rest.deathExpenses ?? base.deathExpenses,
+    priorPayments: rest.priorPayments ?? [],
+    insurance: rest.insurance ?? base.insurance,
+    marriageProbabilityDeduction: coerceMarriageProbabilityDeduction(rest.marriageProbabilityDeduction),
+    educationExpenseDeduction: coerceEducationExpenseDeduction(rest.educationExpenseDeduction),
+    sosyalYardimOdenekleri: Array.isArray(rest.sosyalYardimOdenekleri) ? rest.sosyalYardimOdenekleri : [],
+    capitalValueDocuments: Array.isArray(rest.capitalValueDocuments) ? rest.capitalValueDocuments : [],
+    zmtsPayments: Array.isArray(rest.zmtsPayments) ? rest.zmtsPayments : [],
+    cascoPayments: Array.isArray(rest.cascoPayments) ? rest.cascoPayments : [],
+    common: { ...base.common, ...rest.common },
+  };
 }
 
 function splitFullName(fullName: string | undefined): { firstName: string; lastName: string } {
@@ -239,21 +295,31 @@ function normalizeTrafficInjuryShape(raw: Record<string, unknown>): TrafficInjur
     defendants: ensureDefendantIds(partiesRaw.defendants ?? []),
   };
 
+  const liabilityRaw = (raw.liability as TrafficInjuryDraft["liability"]) ?? base.liability;
+
   return {
     ...base,
     common: (raw.common as TrafficInjuryDraft["common"]) ?? base.common,
     parties,
-    liability: (raw.liability as TrafficInjuryDraft["liability"]) ?? base.liability,
+    liability: {
+      ...liabilityRaw,
+      externalFaultRatio:
+        typeof liabilityRaw.externalFaultRatio === "number" ? liabilityRaw.externalFaultRatio : 0,
+    },
     disability: (raw.disability as TrafficInjuryDraft["disability"]) ?? {},
     temporaryIncapacityPeriods: Array.isArray(raw.temporaryIncapacityPeriods)
       ? (raw.temporaryIncapacityPeriods as TrafficInjuryDraft["temporaryIncapacityPeriods"])
       : [],
+    temporaryIncapacityIgnoreGaps: raw.temporaryIncapacityIgnoreGaps === true,
     accidentIncome: coerceAccidentIncome(raw),
     hospitalExpenses,
     travelExpenses,
     caregiverExpenses,
     capitalValueDocuments: Array.isArray(raw.capitalValueDocuments)
       ? (raw.capitalValueDocuments as TrafficInjuryDraft["capitalValueDocuments"])
+      : [],
+    sosyalYardimOdenekleri: Array.isArray(raw.sosyalYardimOdenekleri)
+      ? (raw.sosyalYardimOdenekleri as NonNullable<TrafficInjuryDraft["sosyalYardimOdenekleri"]>)
       : [],
     zmtsPayments: coerceInsurancePayments(
       raw.zmtsPayments,
@@ -381,6 +447,12 @@ export function loadDraftForType(type: CalculationType): DraftLoadResult {
       };
     }
     if (parsed.schemaVersion === 1 || parsed.schemaVersion === CALCULATION_SCHEMA_VERSION) {
+      if (type === "TRAFFIC_DEATH") {
+        return {
+          ok: true,
+          draft: hydrateTrafficDeathDraft(parsed as import("./types/calculationDraft").TrafficDeathDraft),
+        };
+      }
       return {
         ok: true,
         draft: { ...parsed, schemaVersion: CALCULATION_SCHEMA_VERSION } as CalculationDraft,

@@ -13,38 +13,13 @@ import {
 } from "./FormPrimitives";
 import type { StepProps } from "./wizardTypes";
 import { errorFor } from "./wizardTypes";
+import {
+  DefendantTypeToggleList,
+  TRAFFIC_INSURER_OPTIONS,
+  TRAFFIC_RESPONSIBLE_OPTIONS,
+} from "./DefendantTypeToggleList";
 
-const DEFENDANT_OPTIONS: {
-  type: DefendantType;
-  title: string;
-  description: string;
-}[] = [
-  {
-    type: "INDIVIDUAL_DRIVER",
-    title: "Gerçek Kişi Şoför",
-    description: "Kazaya karışan aracı kullanan kişi",
-  },
-  {
-    type: "INDIVIDUAL_VEHICLE_OWNER",
-    title: "Gerçek Kişi Araç sahibi",
-    description: "Aracın gerçek kişi maliki",
-  },
-  {
-    type: "CORPORATE_VEHICLE_OWNER",
-    title: "Tüzel Kişi Araç sahibi",
-    description: "Aracın şirket veya kurum adına kayıtlı maliki",
-  },
-  {
-    type: "COMPULSORY_TRAFFIC_INSURER",
-    title: "Sigorta şirketi (ZMTS)",
-    description: "Zorunlu mali sorumluluk sigortacısı",
-  },
-  {
-    type: "CASCO_INSURER",
-    title: "Sigorta şirketi (Kasko Şirketi)",
-    description: "Kasko poliçesini düzenleyen sigorta şirketi",
-  },
-];
+const DEFENDANT_OPTIONS = [...TRAFFIC_RESPONSIBLE_OPTIONS, ...TRAFFIC_INSURER_OPTIONS];
 
 function isIndividual(type: DefendantType): boolean {
   return type === "INDIVIDUAL_DRIVER" || type === "INDIVIDUAL_VEHICLE_OWNER";
@@ -174,41 +149,11 @@ export function TrafficPartiesStep({ draft, onChange, fieldErrors }: StepProps) 
           <p className="text-[13px] text-red-600">{errorFor(fieldErrors, "parties.defendants")}</p>
         )}
 
-        <div className="grid grid-cols-1 gap-2.5">
-          {DEFENDANT_OPTIONS.map((opt) => {
-            const selected = typesPresent.has(opt.type);
-            return (
-              <button
-                key={opt.type}
-                type="button"
-                onClick={() => toggleType(opt.type)}
-                className={`w-full rounded-[12px] border px-3.5 py-3 text-left flex items-center justify-between gap-4 min-h-[52px] transition-colors ${
-                  selected
-                    ? "border-blue-800/70 bg-blue-50/50"
-                    : "border-slate-200 bg-white hover:bg-slate-50"
-                }`}
-                aria-pressed={selected}
-              >
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-medium text-slate-800">{opt.title}</span>
-                  <span className="block text-[12px] font-normal text-slate-500 mt-0.5">
-                    {opt.description}
-                  </span>
-                </span>
-                <span
-                  className={`h-5 w-5 shrink-0 rounded-[6px] border flex items-center justify-center text-[11px] ${
-                    selected
-                      ? "border-blue-800 bg-blue-800 text-white"
-                      : "border-slate-300 bg-white text-transparent"
-                  }`}
-                  aria-hidden
-                >
-                  ✓
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <DefendantTypeToggleList
+          options={DEFENDANT_OPTIONS}
+          selectedTypes={typesPresent}
+          onToggle={toggleType}
+        />
       </FormSection>
     </div>
   );

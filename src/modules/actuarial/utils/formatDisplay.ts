@@ -47,6 +47,20 @@ export function formatTrhYmd(entry: { year: number; month: number; day: number }
   return parts.length > 0 ? parts.join(" ") : "—";
 }
 
+export function formatCalendarAgeYmd(
+  entry: { years: number; months: number; days: number } | null | undefined
+): string {
+  if (
+    !entry ||
+    !Number.isFinite(entry.years) ||
+    !Number.isFinite(entry.months) ||
+    !Number.isFinite(entry.days)
+  ) {
+    return "—";
+  }
+  return `${entry.years} yıl ${entry.months} ay ${entry.days} gün`;
+}
+
 export function formatAgeYmd(
   entry: { years: number; months: number; days: number } | null | undefined
 ): string {
@@ -61,4 +75,33 @@ export function formatAgeYmd(
 export function formatNumber(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return value.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
+}
+
+/** Takvim yaşı (doğum → olay); TRH tablosu değildir. */
+export function calendarAgeYmd(
+  birthDate: string | undefined,
+  eventDate: string | undefined
+): { years: number; months: number; days: number } | null {
+  const b = birthDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const e = eventDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!b?.[1] || !b[2] || !b[3] || !e?.[1] || !e[2] || !e[3]) return null;
+  const by = Number(b[1]);
+  const bm = Number(b[2]);
+  const bd = Number(b[3]);
+  const ey = Number(e[1]);
+  const em = Number(e[2]);
+  const ed = Number(e[3]);
+  let years = ey - by;
+  let months = em - bm;
+  let days = ed - bd;
+  if (days < 0) {
+    months -= 1;
+    days += new Date(ey, em - 1, 0).getDate();
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  if (years < 0) return null;
+  return { years, months, days };
 }

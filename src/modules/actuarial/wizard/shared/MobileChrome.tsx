@@ -71,7 +71,7 @@ export function DropdownMenu({
           id={menuId}
           role="menu"
           aria-labelledby={labelledBy}
-          className={`absolute top-full z-50 mt-1.5 min-w-[200px] rounded-[11px] border border-[#D9E5E3] bg-white py-1 shadow-[0_6px_20px_rgba(15,95,99,0.1)] ${
+          className={`absolute top-full z-50 mt-1.5 min-w-[200px] rounded-[11px] border border-[#DCE3E8] bg-white py-1 shadow-[0_6px_20px_rgba(36,55,70,0.1)] ${
             align === "right" ? "right-0" : "left-0"
           }`}
         >
@@ -97,7 +97,7 @@ export function MenuItem({
       role="menuitem"
       onClick={onClick}
       className={`w-full text-left px-3.5 py-2.5 text-[13px] font-medium min-h-[44px] ${
-        danger ? "text-red-600 hover:bg-red-50" : "text-[#22313F] hover:bg-[#EAF4F3]/60"
+        danger ? "text-red-600 hover:bg-red-50" : "text-[#1F2933] hover:bg-[#EEF2F4]/60"
       }`}
     >
       {children}

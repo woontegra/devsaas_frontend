@@ -1,21 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
 import type {
   AccidentIncomeBlock,
-  AverageIncomeKind,
-  AverageIncomeSource,
   CalculationDraft,
   CaregiverExpenseRow,
   DefendantType,
   ExpenseItem,
-  IncomeMode,
   LiableParty,
   TemporaryIncapacityPeriod,
   TrafficInjuryDraft,
 } from "../../types/calculationDraft";
 import { newId } from "../../types/calculationDraft";
-import { computeMonthlyNet } from "../../utils/grossToNet";
-import { actuarialDays360Inclusive } from "../../utils/actuarialDayCount360";
-import { getNetMinWageForDate } from "../../../../data/netMinWage";
+import { deriveTemporaryPeriodDayCount } from "../../utils/temporaryIncapacityPeriods";
 import {
   AddRowButton,
   CurrencyInput,
@@ -23,12 +18,29 @@ import {
   FormField,
   FormSection,
   TextInput,
-  TextSelect,
-  WarningAlert,
-  formatTRY,
 } from "./FormPrimitives";
 import type { StepProps } from "./wizardTypes";
 import { errorFor } from "./wizardTypes";
+import {
+  dateInputErrorClass,
+  fieldHasContinuityError,
+  findLastTemporaryIncapacityEndIndex,
+  getTempDisabilityContinuityMessage,
+  getTempDisabilityContinuityCode,
+} from "./tempDisabilityContinuity";
+import {
+  TEMP_INCAPACITY_START_MUST_MATCH_EVENT_DATE_MESSAGE,
+  fieldHasTempIncapacityStartError,
+  findFirstTemporaryIncapacityStartIndex,
+  hasTempIncapacityStartEventDateError,
+} from "./tempIncapacityStartValidation";
+import {
+  DISABILITY_START_DATE_REQUIRED_MESSAGE,
+  fieldHasDisabilityStartDateRequiredError,
+  hasDisabilityStartDateRequiredError,
+} from "./disabilityStartDateValidation";
+import { AccidentIncomeSection } from "./accidentIncomeUi";
+import { FaultRatiosCard } from "./FaultRatiosCard";
 
 // ─── Sabitler ────────────────────────────────────────────────────────
 
@@ -40,14 +52,6 @@ const DEFENDANT_LABELS: Record<DefendantType, string> = {
   CASCO_INSURER: "Sigorta şirketi (Kasko Şirketi)",
 };
 
-const AVERAGE_KINDS: { kind: AverageIncomeKind; label: string; multi: boolean }[] = [
-  { kind: "min_wage", label: "Asgari Ücret", multi: false },
-  { kind: "tuik", label: "TÜİK Verisi", multi: false },
-  { kind: "union", label: "Sendika", multi: true },
-  { kind: "witness", label: "Tanık", multi: true },
-  { kind: "other", label: "Diğer", multi: false },
-];
-
 // ─── Yardımcılar ────────────────────────────────────────────────────
 
 function asTraffic(draft: CalculationDraft): TrafficInjuryDraft | null {
@@ -56,7 +60,7 @@ function asTraffic(draft: CalculationDraft): TrafficInjuryDraft | null {
 
 function inclusiveDayCount(start: string, end: string): number | undefined {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return undefined;
-  const days = actuarialDays360Inclusive(start, end);
+  const days = deriveTemporaryPeriodDayCount(start, end);
   return days > 0 ? days : undefined;
 }
 
@@ -71,15 +75,6 @@ function emptyCaregiver(): CaregiverExpenseRow {
 function emptyTemp(): TemporaryIncapacityPeriod {
   return { id: newId(), startDate: "", endDate: "", dayCount: undefined };
 }
-
-function parseEventYearMonth(eventDate: string): [number, number] {
-  const m = eventDate.match(/^(\d{4})-(\d{2})/);
-  if (m && m[1] && m[2]) return [parseInt(m[1], 10), parseInt(m[2], 10)];
-  const now = new Date();
-  return [now.getFullYear(), now.getMonth() + 1];
-}
-
-const formatCurrency = formatTRY;
 
 function syncLiabilityParties(draft: TrafficInjuryDraft): TrafficInjuryDraft {
   const types = [...new Set(draft.parties.defendants.map((d) => d.type))];
@@ -96,60 +91,15 @@ function syncLiabilityParties(draft: TrafficInjuryDraft): TrafficInjuryDraft {
   return { ...draft, liability: { ...draft.liability, parties } };
 }
 
-/** Modal açılırken her kaynak türü için en az 1 satır oluştur */
-function ensureDefaultSources(existing: AverageIncomeSource[]): AverageIncomeSource[] {
-  const result = [...existing];
-  for (const meta of AVERAGE_KINDS) {
-    const hasKind = result.some((s) => s.kind === meta.kind);
-    if (!hasKind) {
-      result.push({
-        id: newId(),
-        kind: meta.kind,
-        label: meta.label,
-        amountKind: "net",
-        amount: 0,
-        netAmount: 0,
-      });
-    }
-  }
-  const kindOrder = AVERAGE_KINDS.map((k) => k.kind);
-  result.sort((a, b) => {
-    const ai = kindOrder.indexOf(a.kind);
-    const bi = kindOrder.indexOf(b.kind);
-    return ai - bi;
-  });
-  return result;
-}
-
-function computeSourceNet(
-  s: { amount: number; amountKind: string },
-  year: number,
-  month: number
-): number {
-  if (!s.amount || s.amount <= 0) return 0;
-  if (s.amountKind === "net") return s.amount;
-  return computeMonthlyNet(s.amount, year, month);
-}
-
-function computeAverage(
-  sources: AverageIncomeSource[],
-  year: number,
-  month: number
-): { filledCount: number; totalNet: number; average: number } {
-  const filled = sources.filter((s) => s.amount > 0);
-  const totalNet = filled.reduce((sum, s) => sum + computeSourceNet(s, year, month), 0);
-  return {
-    filledCount: filled.length,
-    totalNet,
-    average: filled.length > 0 ? totalNet / filled.length : 0,
-  };
-}
-
 // ─── Ana bileşen ────────────────────────────────────────────────────
 
-export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: StepProps) {
+export function TrafficCalculationInfoStep({
+  draft,
+  onChange,
+  fieldErrors,
+  validationFieldHighlight = false,
+}: StepProps) {
   const raw = asTraffic(draft);
-  const [avgModalOpen, setAvgModalOpen] = useState(false);
 
   useEffect(() => {
     if (!raw) return;
@@ -196,16 +146,53 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
     .join(" ")
     .trim();
 
+  const lastTempEndIndex = findLastTemporaryIncapacityEndIndex(ti.temporaryIncapacityPeriods);
+  const firstTempStartIndex = findFirstTemporaryIncapacityStartIndex(ti.temporaryIncapacityPeriods);
+  const lastTempEndField =
+    lastTempEndIndex != null ? `temporaryIncapacityPeriods[${lastTempEndIndex}].endDate` : null;
+  const firstTempStartField =
+    firstTempStartIndex != null
+      ? `temporaryIncapacityPeriods[${firstTempStartIndex}].startDate`
+      : null;
+  const continuityErrorCode = getTempDisabilityContinuityCode(fieldErrors);
+  const hasContinuityIssue = continuityErrorCode != null;
+  const hasIncapacityStartIssue = hasTempIncapacityStartEventDateError(fieldErrors);
+  const hasDisabilityStartRequiredIssue = hasDisabilityStartDateRequiredError(fieldErrors);
+  const disabilityRate = ti.disability.permanentDisabilityRate ?? 0;
+  const eventDateHighlight =
+    fieldHasTempIncapacityStartError(fieldErrors, "common.eventDate") ||
+    (validationFieldHighlight && hasIncapacityStartIssue);
+  const disabilityDateHighlight =
+    fieldHasContinuityError(fieldErrors, "disability.disabilityStartDate") ||
+    fieldHasDisabilityStartDateRequiredError(fieldErrors, "disability.disabilityStartDate") ||
+    (validationFieldHighlight && (hasContinuityIssue || hasDisabilityStartRequiredIssue));
+  const tempStartDateHighlight = (rowIndex: number) =>
+    firstTempStartField != null &&
+    rowIndex === firstTempStartIndex &&
+    (fieldHasTempIncapacityStartError(fieldErrors, firstTempStartField) ||
+      (validationFieldHighlight && hasIncapacityStartIssue));
+  const tempEndDateHighlight = (rowIndex: number) =>
+    lastTempEndField != null &&
+    rowIndex === lastTempEndIndex &&
+    (fieldHasContinuityError(fieldErrors, lastTempEndField) ||
+      (validationFieldHighlight && hasContinuityIssue));
+
+  const tempDateInputCls = (highlight: boolean, height = "h-[36px]") =>
+    `w-full ${height} rounded-[8px] border bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none transition ${dateInputErrorClass(highlight)}`;
+
   const plaintiffFault = ti.liability.injuredFaultRatio ?? 0;
+  const externalFault = ti.liability.externalFaultRatio ?? 0;
   const defendantFaultSum = ti.liability.parties.reduce(
     (s, p) => s + (Number(p.faultRatio) || 0),
     0
   );
-  const totalFault = plaintiffFault + defendantFaultSum;
-  const faultWarn = Math.abs(totalFault - 100) > 0.001;
+  const totalFault = plaintiffFault + defendantFaultSum + externalFault;
 
   const setPlaintiffFault = (v: number) =>
     patch({ ...ti, liability: { ...ti.liability, injuredFaultRatio: v } });
+
+  const setExternalFault = (v: number) =>
+    patch({ ...ti, liability: { ...ti.liability, externalFaultRatio: v } });
 
   const setDefendantFault = (id: string, v: number) =>
     patch({
@@ -259,9 +246,17 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
         <div className="calc-info-column">
         <FormSection title="Kaza ve Hesap Tarihleri">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Kaza tarihi" required error={errorFor(fieldErrors, "common.eventDate")}>
+            <FormField
+              label="Kaza tarihi"
+              required
+              error={
+                errorFor(fieldErrors, "common.eventDate") ??
+                (eventDateHighlight ? TEMP_INCAPACITY_START_MUST_MATCH_EVENT_DATE_MESSAGE : undefined)
+              }
+            >
               <TextInput
                 type="date"
+                className={eventDateHighlight ? dateInputErrorClass(true) : undefined}
                 value={ti.common.eventDate}
                 onChange={(e) => setCommonEvent(e.target.value)}
               />
@@ -278,7 +273,7 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
         </FormSection>
 
         <FormSection title="İşlemiş Dönem">
-          <p className="text-[12px] font-normal text-[#6B7280] mb-2">
+          <p className="text-[12px] font-normal text-[#66727F] mb-2">
             Boş bırakılırsa başlangıç kaza tarihi, bitiş hesap tarihi kullanılır.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -308,7 +303,7 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
             </FormField>
           </div>
           {(ti.processedPeriodStartDate || ti.processedPeriodEndDate) && (
-            <p className="text-[11.5px] text-[#6B7280] mt-2 tabular-nums">
+            <p className="text-[11.5px] text-[#66727F] mt-2 tabular-nums">
               Etkin aralık: {processedStart || "—"} → {processedEnd || "—"}
             </p>
           )}
@@ -328,22 +323,26 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
           )}
 
           <div className="space-y-1.5">
-            {ti.temporaryIncapacityPeriods.map((row) => (
+            {ti.temporaryIncapacityPeriods.map((row, rowIndex) => (
               <div
                 key={row.id}
-                className="rounded-[8px] border border-slate-200 px-2.5 py-2"
+                className={`rounded-[8px] border px-2.5 py-2 ${
+                  tempEndDateHighlight(rowIndex) || tempStartDateHighlight(rowIndex)
+                    ? "border-red-300 bg-red-50/30"
+                    : "border-slate-200"
+                }`}
               >
                 {/* Masaüstü: tek satır */}
                 <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_100px_32px] gap-2 items-center">
                   <input
                     type="date"
-                    className="w-full h-[36px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                    className={tempDateInputCls(tempStartDateHighlight(rowIndex))}
                     value={row.startDate}
                     onChange={(e) => updateTemp(row.id, { startDate: e.target.value }, true)}
                   />
                   <input
                     type="date"
-                    className="w-full h-[36px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                    className={tempDateInputCls(tempEndDateHighlight(rowIndex))}
                     value={row.endDate}
                     onChange={(e) => updateTemp(row.id, { endDate: e.target.value }, true)}
                   />
@@ -373,7 +372,7 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
                       <label className="text-[12px] font-medium text-slate-500">Başlangıç</label>
                       <input
                         type="date"
-                        className="w-full h-[38px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                        className={tempDateInputCls(tempStartDateHighlight(rowIndex), "h-[38px]")}
                         value={row.startDate}
                         onChange={(e) => updateTemp(row.id, { startDate: e.target.value }, true)}
                       />
@@ -382,7 +381,7 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
                       <label className="text-[12px] font-medium text-slate-500">Bitiş</label>
                       <input
                         type="date"
-                        className="w-full h-[38px] rounded-[8px] border border-slate-200 bg-white px-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-800/15 focus:border-blue-800/60 transition"
+                        className={tempDateInputCls(tempEndDateHighlight(rowIndex), "h-[38px]")}
                         value={row.endDate}
                         onChange={(e) => updateTemp(row.id, { endDate: e.target.value }, true)}
                       />
@@ -420,184 +419,58 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
           </div>
         </FormSection>
 
-        <FormSection title="Kaza Tarihindeki Gelir">
-          {(() => {
-            const mode: IncomeMode = income.incomeMode ?? (income.useAverage ? "average" : "fixed");
-            const selectMode = (m: IncomeMode) => {
-              if (m === mode) return;
-              if (m === "minWage") {
-                setIncome({ ...income, incomeMode: "minWage", fixedAmount: null, averageSources: [], averageNetResult: undefined });
-              } else if (m === "fixed") {
-                setIncome({ ...income, incomeMode: "fixed", averageSources: [], averageNetResult: undefined });
-              } else {
-                setIncome({ ...income, incomeMode: "average", fixedAmount: null });
-                setAvgModalOpen(true);
-              }
-            };
-            const modeBtn = (m: IncomeMode, label: string) => {
-              const active = mode === m;
-              return (
-                <button
-                  type="button"
-                  onClick={() => selectMode(m)}
-                  className={`relative flex items-center gap-2 rounded-[8px] border px-3 py-2.5 text-left transition-all ${
-                    active
-                      ? "border-blue-800 bg-blue-50/60 ring-1 ring-blue-800/20"
-                      : "border-slate-200 bg-white hover:border-slate-300"
-                  }`}
-                >
-                  <span
-                    className={`shrink-0 h-4 w-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                      active ? "border-blue-800" : "border-slate-300"
-                    }`}
-                  >
-                    {active && <span className="h-1.5 w-1.5 rounded-full bg-blue-800" />}
-                  </span>
-                  <span className={`text-[14px] font-medium ${active ? "text-blue-900" : "text-slate-600"}`}>
-                    {label}
-                  </span>
-                </button>
-              );
-            };
-
-            const eventDate = ti.common.eventDate;
-            const minWageAmount = eventDate ? getNetMinWageForDate(eventDate) : null;
-
-            return (
-              <>
-                <div className="grid grid-cols-3 gap-2">
-                  {modeBtn("minWage", "Asgari Ücret")}
-                  {modeBtn("fixed", "Sabit Ücret")}
-                  {modeBtn("average", "Ortalama Gelir")}
-                </div>
-
-                {mode === "minWage" && (
-                  <div className="mt-3 rounded-[10px] border border-slate-200 bg-slate-50/70 px-4 py-3">
-                    {!eventDate ? (
-                      <p className="text-[14px] text-amber-700">Önce kaza tarihini girin</p>
-                    ) : minWageAmount == null ? (
-                      <WarningAlert>
-                        {eventDate} tarihi için tanımlı asgari ücret dönemi bulunamadı.
-                      </WarningAlert>
-                    ) : (
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
-                          Kaza Tarihindeki Net Asgari Ücret
-                        </p>
-                        <p className="mt-0.5 text-[18px] font-semibold tracking-tight text-blue-900">
-                          {formatCurrency(minWageAmount)} TL
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {mode === "fixed" && (
-                  <div className="mt-2.5">
-                    <FormField
-                      label="Tutar"
-                      error={errorFor(fieldErrors, "accidentIncome.fixedAmount")}
-                    >
-                      <CurrencyInput
-                        value={income.fixedAmount ?? 0}
-                        onChange={(v) =>
-                          setIncome({
-                            ...income,
-                            fixedAmount: v === 0 ? null : v,
-                          })
-                        }
-                      />
-                    </FormField>
-                  </div>
-                )}
-
-                {mode === "average" && (
-                  <div className="mt-3 flex items-center gap-3 rounded-[10px] border border-slate-200 bg-slate-50/70 px-4 py-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
-                        Hesaplanan Ortalama Net Gelir
-                      </p>
-                      <p className="mt-0.5 text-[18px] font-semibold tracking-tight text-blue-900">
-                        {income.averageNetResult != null
-                          ? `₺${formatCurrency(income.averageNetResult)}`
-                          : "—"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-[8px] border border-slate-300 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
-                      onClick={() => setAvgModalOpen(true)}
-                    >
-                      Kaynakları Düzenle
-                    </button>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </FormSection>
+        <AccidentIncomeSection
+          income={income}
+          eventDate={ti.common.eventDate}
+          fieldErrors={fieldErrors}
+          onChange={setIncome}
+        />
         </div>
 
         <div className="calc-info-column">
-        <FormSection title="Kusur Oranları">
-          <div className="space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
-              <p className="flex-1 text-[14px] font-medium text-slate-800">
-                Davacı{plaintiffName ? ` — ${plaintiffName}` : ""}
-              </p>
-              <div className="flex items-center gap-1.5 w-full sm:w-36">
-                <TextInput
-                  type="number"
-                  min={0}
-                  max={100}
-                  inputMode="decimal"
-                  value={plaintiffFault}
-                  onChange={(e) => setPlaintiffFault(Number(e.target.value))}
-                />
-                <span className="text-[13px] text-slate-500">%</span>
-              </div>
-            </div>
-
-            {ti.liability.parties.length === 0 && (
-              <p className="text-[13px] text-slate-500">
-                İlk adımda davalı türü seçildiğinde burada listelenir.
-              </p>
-            )}
-
-            {ti.liability.parties.map((p) => (
-              <div key={p.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
-                <p className="flex-1 text-[14px] font-medium text-slate-800">{p.name}</p>
-                <div className="flex items-center gap-1.5 w-full sm:w-36">
-                  <TextInput
-                    type="number"
-                    min={0}
-                    max={100}
-                    inputMode="decimal"
-                    value={p.faultRatio}
-                    onChange={(e) => setDefendantFault(p.id, Number(e.target.value))}
-                  />
-                  <span className="text-[13px] text-slate-500">%</span>
-                </div>
-              </div>
-            ))}
-
-            {faultWarn && (
-              <WarningAlert>
-                Kusur oranları toplamı %{totalFault.toFixed(0)}. Toplam %100 olmalıdır (otomatik
-                düzeltilmez).
-              </WarningAlert>
-            )}
-          </div>
-        </FormSection>
+        <FaultRatiosCard
+          rows={[
+            {
+              id: "plaintiff",
+              label: `Davacı${plaintiffName ? ` — ${plaintiffName}` : ""}`,
+              value: plaintiffFault,
+              onChange: setPlaintiffFault,
+            },
+            ...ti.liability.parties.map((p) => ({
+              id: p.id,
+              label: p.name,
+              value: p.faultRatio,
+              onChange: (v: number) => setDefendantFault(p.id, v),
+            })),
+          ]}
+          emptyMessage={
+            ti.liability.parties.length === 0
+              ? "İlk adımda davalı türü seçildiğinde burada listelenir."
+              : undefined
+          }
+          externalFault={externalFault}
+          onExternalFaultChange={setExternalFault}
+          externalError={errorFor(fieldErrors, "liability.externalFaultRatio")}
+          totalFault={totalFault}
+        />
 
         <FormSection title="Maluliyet">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField
               label="Maluliyet başlangıç"
-              error={errorFor(fieldErrors, "disability.disabilityStartDate")}
+              required={disabilityRate > 0}
+              error={
+                errorFor(fieldErrors, "disability.disabilityStartDate") ??
+                (disabilityDateHighlight && hasDisabilityStartRequiredIssue
+                  ? DISABILITY_START_DATE_REQUIRED_MESSAGE
+                  : disabilityDateHighlight && continuityErrorCode
+                    ? getTempDisabilityContinuityMessage(continuityErrorCode)
+                    : undefined)
+              }
             >
               <TextInput
                 type="date"
+                className={disabilityDateHighlight ? dateInputErrorClass(true) : undefined}
                 value={ti.disability.disabilityStartDate ?? ""}
                 onChange={(e) =>
                   patch({
@@ -723,19 +596,6 @@ export function TrafficCalculationInfoStep({ draft, onChange, fieldErrors }: Ste
             </div>
           </div>
         </FormSection>
-
-      {/* ── Ortalama gelir modalı ── */}
-      {avgModalOpen && (
-        <AverageIncomeModal
-          initialSources={income.averageSources}
-          eventDate={ti.common.eventDate}
-          onApply={(sources, averageNetResult) => {
-            setIncome({ ...income, incomeMode: "average", averageSources: sources, averageNetResult });
-            setAvgModalOpen(false);
-          }}
-          onClose={() => setAvgModalOpen(false)}
-        />
-      )}
     </div>
   );
 }
@@ -792,230 +652,6 @@ function ExpenseList({
           </div>
         ))}
         <AddRowButton label={`${title} ekle`} onClick={() => onChange([...rows, emptyExpense()])} />
-      </div>
-    </div>
-  );
-}
-
-// ─── Ortalama gelir modalı ───────────────────────────────────────────
-
-function AverageIncomeModal({
-  initialSources,
-  eventDate,
-  onApply,
-  onClose,
-}: {
-  initialSources: AverageIncomeSource[];
-  eventDate: string;
-  onApply: (sources: AverageIncomeSource[], averageNetResult: number) => void;
-  onClose: () => void;
-}) {
-  const [sources, setSources] = useState<AverageIncomeSource[]>(() =>
-    ensureDefaultSources(initialSources)
-  );
-
-  const [year, month] = useMemo(() => parseEventYearMonth(eventDate), [eventDate]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
-
-  const updateSource = (id: string, patch: Partial<AverageIncomeSource>) => {
-    setSources((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        const next = { ...s, ...patch };
-        next.netAmount = computeSourceNet(next, year, month);
-        return next;
-      })
-    );
-  };
-
-  const removeSource = (id: string) => {
-    setSources((prev) => {
-      const item = prev.find((s) => s.id === id);
-      if (!item) return prev;
-      const sameKindCount = prev.filter((s) => s.kind === item.kind).length;
-      if (sameKindCount <= 1) return prev;
-      return prev.filter((s) => s.id !== id);
-    });
-  };
-
-  const addSource = (kind: AverageIncomeKind) => {
-    const meta = AVERAGE_KINDS.find((k) => k.kind === kind)!;
-    const existing = sources.filter((s) => s.kind === kind);
-    setSources((prev) => {
-      let lastIdx = -1;
-      for (let i = prev.length - 1; i >= 0; i--) {
-        if (prev[i]!.kind === kind) { lastIdx = i; break; }
-      }
-      const entry: AverageIncomeSource = {
-        id: newId(),
-        kind,
-        label: `${meta.label} ${existing.length + 1}`,
-        amountKind: "net",
-        amount: 0,
-        netAmount: 0,
-      };
-      const next = [...prev];
-      next.splice(lastIdx + 1, 0, entry);
-      return next;
-    });
-  };
-
-  const { filledCount, average } = computeAverage(sources, year, month);
-
-  const handleApply = () => {
-    const withNets = sources.map((s) => ({
-      ...s,
-      netAmount: computeSourceNet(s, year, month),
-    }));
-    const { average: avg } = computeAverage(withNets, year, month);
-    onApply(withNets, Math.round(avg * 100) / 100);
-  };
-
-  const monthNames = [
-    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
-    "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
-  ];
-  const dateLabel = eventDate
-    ? `${monthNames[month - 1] ?? month} ${year}`
-    : "Tarih belirtilmedi";
-
-  const groupedKinds = AVERAGE_KINDS.map((meta) => ({
-    ...meta,
-    rows: sources.filter((s) => s.kind === meta.kind),
-  }));
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4">
-      <button
-        type="button"
-        className="absolute inset-0 bg-slate-900/40 border-0"
-        aria-label="Kapat"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Ortalama gelir kaynakları"
-        className="relative w-full max-w-2xl max-h-[85vh] rounded-[14px] bg-white border border-slate-200 shadow-lg flex flex-col"
-      >
-        {/* Başlık */}
-        <div className="p-5 pb-3 border-b border-slate-100 shrink-0">
-          <h3 className="text-[16px] font-semibold text-slate-800">Ortalama Gelir Kaynakları</h3>
-          <p className="text-[13px] text-slate-500 mt-1">
-            Kaza tarihi: <span className="font-medium">{dateLabel}</span>
-            {" · "}Brüt tutarlar otomatik nete çevrilir.
-          </p>
-        </div>
-
-        {/* İçerik */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {groupedKinds.map((group) => (
-            <div key={group.kind}>
-              <p className="text-[13px] font-semibold text-slate-700 mb-2">{group.label}</p>
-              <div className="space-y-2">
-                {group.rows.map((s) => {
-                  const net = computeSourceNet(s, year, month);
-                  const canDelete = group.rows.length > 1;
-                  return (
-                    <div
-                      key={s.id}
-                      className="rounded-[10px] border border-slate-200 p-3"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr_1fr] gap-2 items-end">
-                        <FormField label="Tutar türü">
-                          <TextSelect
-                            value={s.amountKind}
-                            onChange={(e) =>
-                              updateSource(s.id, {
-                                amountKind: e.target.value as "net" | "gross",
-                              })
-                            }
-                          >
-                            <option value="net">Net</option>
-                            <option value="gross">Brüt</option>
-                          </TextSelect>
-                        </FormField>
-                        <FormField label="Tutar">
-                          <CurrencyInput
-                            value={s.amount}
-                            onChange={(v) =>
-                              updateSource(s.id, { amount: v })
-                            }
-                          />
-                        </FormField>
-                        <FormField label="Net karşılık">
-                          <div className="w-full min-h-[42px] rounded-[8px] border border-slate-200 bg-slate-50 px-3 flex items-center justify-end text-[13px] text-slate-800">
-                            {s.amount > 0 ? `₺${formatCurrency(net)}` : "—"}
-                          </div>
-                        </FormField>
-                      </div>
-                      {canDelete && (
-                        <div className="mt-2">
-                          <DeleteIconButton
-                            title="Kaynağı sil"
-                            onClick={() => removeSource(s.id)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {group.multi && (
-                <button
-                  type="button"
-                  className="mt-2 text-[13px] font-medium text-blue-700 hover:text-blue-800"
-                  onClick={() => addSource(group.kind)}
-                >
-                  + {group.label} ekle
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Alt bilgi */}
-        <div className="p-5 pt-3 border-t border-slate-100 shrink-0 space-y-3">
-          <div className="flex items-center justify-between gap-4 text-[14px]">
-            <span className="text-slate-600">
-              Dolu kayıt: <span className="font-semibold text-slate-800">{filledCount}</span>
-            </span>
-            <span className="text-slate-600">
-              Ortalama:{" "}
-              <span className="font-semibold text-slate-800">
-                {filledCount > 0 ? `₺${formatCurrency(average)}` : "—"}
-              </span>
-            </span>
-          </div>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              className="btn-primary flex-1 min-h-[44px]"
-              onClick={handleApply}
-            >
-              Uygula
-            </button>
-            <button
-              type="button"
-              className="btn-secondary flex-1 min-h-[44px]"
-              onClick={onClose}
-            >
-              İptal
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

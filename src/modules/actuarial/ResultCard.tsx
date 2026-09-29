@@ -79,7 +79,7 @@ export function ResultCard({
     );
   };
 
-  const tickStyle = { fontSize: 12, fill: "#64748B" };
+  const tickStyle = { fontSize: 12, fill: "#66727F" };
 
   return (
     <div className="space-y-4 animate-fade-in">
