@@ -68,6 +68,28 @@ export interface TrafficDeathClaimantLoss {
   cascoPaymentDetails?: TrafficDeathPaymentDetail[];
 }
 
+export interface TrafficDeathGarameResponsibilityShareRow {
+  claimantId: string;
+  claimantName: string;
+  relationLabel: string;
+  claimantStatus: "PLAINTIFF" | "OUT_OF_CASE" | "SYNTHETIC" | null;
+  remainingLoss: number;
+  garameRatio: number;
+  personLimit: number;
+  responsibilityShare: number;
+}
+
+export interface TrafficDeathGarameResponsibilityGroup {
+  totalRemainingLoss: number;
+  personLimit: number;
+  shares: TrafficDeathGarameResponsibilityShareRow[];
+}
+
+export interface TrafficDeathGarameResponsibilityShares {
+  zmts: TrafficDeathGarameResponsibilityGroup | null;
+  casco: TrafficDeathGarameResponsibilityGroup | null;
+}
+
 export interface TrafficDeathInterestSegment {
   startDate: string;
   endDate: string;
@@ -91,6 +113,10 @@ export interface TrafficDeathExpenseTotals {
   transportCost: number;
   otherExpenses: number;
   total: number;
+  grossPreDeathTreatment?: number;
+  grossFuneralCost?: number;
+  grossOtherExpenses?: number;
+  grossTotal?: number;
 }
 
 export interface TrafficDeathMarriageProbability {
@@ -151,6 +177,52 @@ export interface TrafficDeathCalculationResult {
   insuranceDeductions?: {
     zmts: { principalTotal: number; interestTotal: number; deductionTotal: number };
     casco: { principalTotal: number; interestTotal: number; deductionTotal: number };
+  };
+  garameResponsibilityShares?: TrafficDeathGarameResponsibilityShares;
+  educationExpenseDeduction?: {
+    status: "READY" | "NO_END_DATE" | "INVALID_RANGE" | "NO_PARENTS" | "NO_MIN_WAGE";
+    startDate: string | null;
+    endDate: string | null;
+    calculationDate: string | null;
+    shareRate: number;
+    father: { claimantId: string; claimantName: string; relation: "father" | "mother" } | null;
+    mother: { claimantId: string; claimantName: string; relation: "father" | "mother" } | null;
+    pastPeriods: Array<{
+      startDate: string;
+      endDate: string;
+      netMinWage: number;
+      dailyWage: number;
+      dayCount: number;
+      periodExpense: number;
+      shareRate: number;
+      fatherRearingExpense: number;
+      motherRearingExpense: number;
+    }>;
+    futurePeriods: Array<{
+      startDate: string;
+      endDate: string;
+      dayCount: number;
+      netMinWage: number;
+      dailyWage: number;
+      kn: number;
+      discountFactor: number;
+      increasedExpense: number;
+      discountedExpense: number;
+      shareRate: number;
+      fatherRearingExpense: number;
+      motherRearingExpense: number;
+      periodIndex: number;
+    }>;
+    futureBaseNetMinWage: number | null;
+    fatherPastTotal: number;
+    fatherFutureTotal: number;
+    fatherTotal: number;
+    motherPastTotal: number;
+    motherFutureTotal: number;
+    motherTotal: number;
+    pastPeriodExpenseTotal: number;
+    futurePeriodExpenseTotal: number;
+    periodExpenseTotal: number;
   };
   finalCompensation: number;
   warnings: string[];

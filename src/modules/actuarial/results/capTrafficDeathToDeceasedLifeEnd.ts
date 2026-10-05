@@ -1,4 +1,8 @@
-import type { TrafficDeathCalculationResult } from "../types/trafficDeathResult";
+import type {
+  TrafficDeathCalculationResult,
+  TrafficDeathGarameResponsibilityGroup,
+  TrafficDeathGarameResponsibilityShares,
+} from "../types/trafficDeathResult";
 import type { TrafficDeathShareRatioPeriod } from "../types/trafficDeathShareRatios";
 import type { TrafficDeathPersonLife } from "../types/trafficDeathSupportPeriods";
 import { coercePersonLives } from "../types/trafficDeathSupportPeriods";
@@ -106,6 +110,78 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Cap sonrası kalan zarar değişince motorun ürettiği garame paylarını yeniler. */
+function rescaleGarameResponsibilityShares(
+  existing: TrafficDeathGarameResponsibilityShares | undefined,
+  claimantLosses: TrafficDeathCalculationResult["claimantLosses"]
+): TrafficDeathGarameResponsibilityShares | undefined {
+  if (!existing) return undefined;
+  const byId = new Map(claimantLosses.map((c) => [c.claimantId, c]));
+
+  const orderShares = <T extends { claimantId: string }>(shares: T[]): T[] => {
+    const shareById = new Map(shares.map((row) => [row.claimantId, row]));
+    const ordered: T[] = [];
+    for (const claimant of claimantLosses) {
+      const row = shareById.get(claimant.claimantId);
+      if (!row) continue;
+      ordered.push(row);
+      shareById.delete(claimant.claimantId);
+    }
+    for (const row of shareById.values()) ordered.push(row);
+    return ordered;
+  };
+
+  const rescaleGroup = (
+    group: TrafficDeathGarameResponsibilityGroup | null
+  ): TrafficDeathGarameResponsibilityGroup | null => {
+    if (!group) return null;
+    const personLimit = group.personLimit;
+    const participants = group.shares.map((row) => {
+      const live = byId.get(row.claimantId);
+      return {
+        ...row,
+        remainingLoss: roundMoney(live?.lossAfterInsurancePayments ?? row.remainingLoss),
+        claimantName: live?.claimantName ?? row.claimantName,
+        relationLabel: live?.relationLabel ?? row.relationLabel,
+        claimantStatus: live?.claimantStatus ?? row.claimantStatus,
+      };
+    });
+    const totalRemainingLoss = roundMoney(
+      participants.reduce((s, row) => s + row.remainingLoss, 0)
+    );
+    const rawShares = participants.map((row) => {
+      const garameRatio =
+        totalRemainingLoss > 0 && Number.isFinite(row.remainingLoss / totalRemainingLoss)
+          ? row.remainingLoss / totalRemainingLoss
+          : 0;
+      const safeRatio = Number.isFinite(garameRatio) ? garameRatio : 0;
+      return {
+        ...row,
+        garameRatio: safeRatio,
+        personLimit,
+        responsibilityShare: roundMoney(safeRatio * personLimit),
+      };
+    });
+    if (rawShares.length > 0 && totalRemainingLoss > 0 && personLimit > 0) {
+      const sum = roundMoney(rawShares.reduce((s, r) => s + r.responsibilityShare, 0));
+      const drift = roundMoney(personLimit - sum);
+      if (drift !== 0) {
+        const last = rawShares.length - 1;
+        rawShares[last] = {
+          ...rawShares[last]!,
+          responsibilityShare: roundMoney(rawShares[last]!.responsibilityShare + drift),
+        };
+      }
+    }
+    return { totalRemainingLoss, personLimit, shares: orderShares(rawShares) };
+  };
+
+  return {
+    zmts: rescaleGroup(existing.zmts),
+    casco: rescaleGroup(existing.casco),
+  };
+}
+
 function finalAfterDeathMahsup(
   result: TrafficDeathCalculationResult,
   supportAfterMarriage: number
@@ -186,6 +262,10 @@ function stampInsuranceTotals(
   return {
     ...next,
     finalCompensation: finalAfterDeathMahsup(next, totalAfterMarriageProbability),
+    garameResponsibilityShares: rescaleGarameResponsibilityShares(
+      next.garameResponsibilityShares,
+      rows
+    ),
   };
 }
 
@@ -283,11 +363,23 @@ export function normalizeTrafficDeathCalculationResult(
       )
     : result.supportPeriods;
 
+  // Motor garame kapalıyken dava dışı kişileri claimantLosses'tan çıkarır.
+  // Cap yeniden toplarken aynı kuralı koru (yalnız mevcut satır kimlikleri + davacılar).
+  const includedClaimantIds = new Set(result.claimantLosses.map((c) => c.claimantId));
+  const keepPeriodRow = (row: {
+    claimantId: string;
+    claimantStatus: (typeof processedPeriods)[number]["claimantStatus"];
+  }) =>
+    row.claimantStatus !== "OUT_OF_CASE" || includedClaimantIds.has(row.claimantId);
+
+  const billableProcessed = processedPeriods.filter(keepPeriodRow);
+  const billableFuture = futurePeriods.filter(keepPeriodRow);
+
   const processedTotal = roundMoney(
-    processedPeriods.reduce((s, r) => s + (r.periodDamage || 0), 0)
+    billableProcessed.reduce((s, r) => s + (r.periodDamage || 0), 0)
   );
   const futureTotal = roundMoney(
-    futurePeriods.reduce((s, r) => s + (r.periodDamage || 0), 0)
+    billableFuture.reduce((s, r) => s + (r.periodDamage || 0), 0)
   );
 
   const lossMap = new Map<
@@ -323,10 +415,10 @@ export function normalizeTrafficDeathCalculationResult(
     return entry;
   };
 
-  for (const row of processedPeriods) {
+  for (const row of billableProcessed) {
     ensure(row).processedLoss = roundMoney(ensure(row).processedLoss + row.periodDamage);
   }
-  for (const row of futurePeriods) {
+  for (const row of billableFuture) {
     ensure(row).futureLoss = roundMoney(ensure(row).futureLoss + row.periodDamage);
   }
 
@@ -380,7 +472,13 @@ export function normalizeTrafficDeathCalculationResult(
       ? capPersonLivesEffectiveSupportEnd(coercePersonLives(result.personLives), cap)
       : result.personLives,
   });
-  return withMarriage;
+  return {
+    ...withMarriage,
+    garameResponsibilityShares: rescaleGarameResponsibilityShares(
+      withMarriage.garameResponsibilityShares ?? result.garameResponsibilityShares,
+      withMarriage.claimantLosses
+    ),
+  };
 }
 
 export function normalizeTrafficDeathSupportSnapshot(params: {

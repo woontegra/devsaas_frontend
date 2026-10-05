@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { resetPasswordIssue } from "../auth/resetPasswordForm";
 import { confirmPasswordReset } from "../services/api";
 import wordmark from "../assets/brand/logo-horizontal.png";
 
@@ -11,27 +12,27 @@ export function ResetPasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [invalid, setInvalid] = useState(token.trim().length < 20);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (password.length < 8) {
-      setError("Şifre en az 8 karakter olmalı.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Şifreler eşleşmiyor.");
+    const issue = resetPasswordIssue(password, confirm);
+    if (issue) {
+      setError(issue);
       return;
     }
     setLoading(true);
     confirmPasswordReset(token, password)
-      .then(() => {
-        setDone(true);
-        window.setTimeout(() => navigate("/login", { replace: true }), 1200);
+      .then((res) => {
+        navigate("/login", { replace: true, state: { info: res.message } });
       })
       .catch((err) => {
-        const data = err.response?.data as { message?: string; error?: string } | undefined;
+        const data = err.response?.data as { message?: string; error?: string; code?: string } | undefined;
+        if (data?.code === "INVALID_TOKEN") {
+          setInvalid(true);
+          return;
+        }
         setError(data?.message || data?.error || "Şifre güncellenemedi.");
       })
       .finally(() => setLoading(false));
@@ -51,8 +52,17 @@ export function ResetPasswordPage() {
             />
             <h1 className="text-[22px] font-semibold text-brand-text tracking-[-0.02em]">Şifrenizi Sıfırlayın</h1>
           </div>
-          {done ? (
-            <p className="text-center text-[13px] text-brand-text">Şifreniz güncellendi.</p>
+          {invalid ? (
+            <div className="space-y-4 text-center">
+              <p className="text-[13px] text-brand-text">Bağlantı geçersiz, kullanılmış veya süresi dolmuş.</p>
+              <Link
+                to="/login"
+                state={{ view: "forgot" }}
+                className="btn-primary inline-flex w-full min-h-[42px] items-center justify-center px-4"
+              >
+                Yeni bağlantı iste
+              </Link>
+            </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="flex flex-col gap-1">

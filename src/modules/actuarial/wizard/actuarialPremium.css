@@ -1,0 +1,721 @@
+/**
+ * Akt�erya SaaS wizard � approved premium visual system (all calc types).
+ * Scope: .actuarial-premium only (TRAFFIC_DEATH / TRAFFIC_INJURY / WORK_DEATH / WORK_INJURY).
+ * Does not alter global FormPrimitives defaults outside the wizard.
+ */
+
+.actuarial-premium {
+  --td-navy: #123b63;
+  --td-navy-deep: #0e2f50;
+  --td-primary: #0f4c81;
+  --td-primary-hover: #0b5cad;
+  --td-soft: #eef4fa;
+  --td-soft-strong: #e3edf7;
+  --td-mint: #edf7f4;
+  --td-mint-border: #cfe8df;
+  --td-bg: #f4f7fb;
+  --td-surface: #ffffff;
+  --td-border: #d7e0ea;
+  --td-border-strong: #c5d2e0;
+  --td-text: #152536;
+  --td-muted: #5f6f81;
+  --td-danger: #b42318;
+  --td-danger-soft: #fef3f2;
+  --td-radius: 11px;
+  --td-radius-sm: 8px;
+  --td-shadow: 0 1px 2px rgba(18, 59, 99, 0.04), 0 4px 14px rgba(18, 59, 99, 0.045);
+  --td-shadow-sm: 0 1px 3px rgba(18, 59, 99, 0.05);
+  --td-focus: 0 0 0 3px rgba(15, 76, 129, 0.14);
+
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: -0.011em;
+  color: var(--td-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Soften Tailwind weight utilities inside TRAFFIC_DEATH */
+.actuarial-premium .font-semibold {
+  font-weight: 500 !important;
+}
+.actuarial-premium .font-bold {
+  font-weight: 600 !important;
+}
+.actuarial-premium .font-medium {
+  font-weight: 500 !important;
+}
+.actuarial-premium .font-normal {
+  font-weight: 400 !important;
+}
+
+/* ─── Page header ─────────────────────────────────────────────── */
+.actuarial-premium > .td-premium-header h1 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--td-navy);
+  line-height: 1.3;
+}
+@media (min-width: 640px) {
+  .actuarial-premium > .td-premium-header h1 {
+    font-size: 20px;
+  }
+}
+.actuarial-premium > .td-premium-header .td-premium-status {
+  color: var(--td-muted);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.actuarial-premium > .td-premium-header .td-premium-file-label {
+  color: var(--td-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* Center step title */
+.actuarial-premium main h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-navy);
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+}
+
+/* ─── Cards / FormSection (all steps) ─────────────────────────── */
+.actuarial-premium .ui-form-section {
+  border-radius: var(--td-radius);
+  border-color: var(--td-border);
+  box-shadow: var(--td-shadow);
+  background: var(--td-surface);
+  padding: 18px 18px 16px;
+}
+@media (min-width: 640px) {
+  .actuarial-premium .ui-form-section {
+    padding: 20px 20px 18px;
+  }
+}
+.actuarial-premium .ui-form-section > .mb-4.pb-3 {
+  border-color: var(--td-border);
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+.actuarial-premium .ui-form-section .ui-card-header-mark {
+  background: var(--td-navy);
+  width: 3px;
+  height: 15px;
+  border-radius: 999px;
+}
+.actuarial-premium .ui-form-section h3 {
+  font-size: 15.5px !important;
+  font-weight: 600 !important;
+  color: var(--td-navy) !important;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+}
+.actuarial-premium .ui-form-section > .mb-4.pb-3 p {
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--td-muted);
+  max-width: 62rem;
+}
+
+/* Nested / custom cards in main workspace */
+.actuarial-premium main .rounded-xl.border,
+.actuarial-premium main .rounded-\[13px\].border,
+.actuarial-premium main .rounded-\[10px\].border,
+.actuarial-premium main .rounded-\[8px\].border,
+.actuarial-premium main .rounded-\[11px\].border {
+  border-color: var(--td-border) !important;
+  box-shadow: var(--td-shadow-sm);
+}
+
+.actuarial-premium main .ui-card {
+  border-radius: var(--td-radius);
+  border-color: var(--td-border);
+  box-shadow: var(--td-shadow-sm);
+  background: var(--td-surface);
+}
+.actuarial-premium main .ui-card > h4,
+.actuarial-premium main .ui-card h4 {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--td-navy) !important;
+  letter-spacing: -0.015em;
+}
+
+/* Insurance / ZMTS / Kasko card chrome */
+.actuarial-premium main .bg-\[\#243746\] {
+  background-color: var(--td-navy) !important;
+}
+.actuarial-premium main .border-\[\#DCE3E8\] {
+  border-color: var(--td-border) !important;
+}
+.actuarial-premium main .bg-\[\#EEF2F4\]\/50,
+.actuarial-premium main .bg-\[\#EEF2F4\]\/70,
+.actuarial-premium main .bg-\[\#F5F7FA\]\/70,
+.actuarial-premium main .bg-\[\#F5F7FA\]\/40,
+.actuarial-premium main .bg-\[\#F8FAFB\] {
+  background-color: var(--td-soft) !important;
+}
+
+/* Soft info strip (education + reusable) */
+.actuarial-premium .td-edu-info {
+  margin-top: 0;
+  margin-bottom: 4px;
+  padding: 10px 12px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-soft);
+  border: 1px solid color-mix(in srgb, var(--td-primary) 12%, var(--td-border));
+  color: var(--td-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* Alerts */
+.actuarial-premium .accent-warning-surface {
+  border-radius: var(--td-radius-sm);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.actuarial-premium .text-red-600,
+.actuarial-premium .text-red-700,
+.actuarial-premium .text-red-800,
+.actuarial-premium .text-\[\#C0392B\] {
+  color: var(--td-danger) !important;
+  font-weight: 400;
+}
+.actuarial-premium .bg-red-50 {
+  background: var(--td-danger-soft) !important;
+}
+.actuarial-premium .border-red-200 {
+  border-color: #f0c9c9 !important;
+}
+
+/* ─── Labels / inputs (all steps) ─────────────────────────────── */
+.actuarial-premium label {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--td-text) !important;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+.actuarial-premium label + p,
+.actuarial-premium .text-\[11\.5px\],
+.actuarial-premium .text-\[12px\].text-\[\#66727F\],
+.actuarial-premium p.text-\[12px\],
+.actuarial-premium p.text-\[12\.5px\] {
+  line-height: 1.45;
+}
+
+.actuarial-premium .ui-input,
+.actuarial-premium input[type="date"],
+.actuarial-premium input[type="text"],
+.actuarial-premium input[type="number"],
+.actuarial-premium input[type="email"],
+.actuarial-premium select,
+.actuarial-premium textarea {
+  border-radius: var(--td-radius-sm) !important;
+  border-color: var(--td-border) !important;
+  color: var(--td-text) !important;
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  min-height: 40px;
+  line-height: 1.4;
+  box-shadow: none !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+.actuarial-premium .ui-input:focus,
+.actuarial-premium input:focus,
+.actuarial-premium select:focus,
+.actuarial-premium textarea:focus {
+  outline: none !important;
+  border-color: color-mix(in srgb, var(--td-primary) 55%, var(--td-border)) !important;
+  box-shadow: var(--td-focus) !important;
+}
+.actuarial-premium input:disabled,
+.actuarial-premium .ui-input:disabled,
+.actuarial-premium select:disabled {
+  background: #f7fafc !important;
+  color: var(--td-text) !important;
+  opacity: 1 !important;
+  border-color: var(--td-border) !important;
+}
+.actuarial-premium .ui-input::placeholder,
+.actuarial-premium textarea::placeholder,
+.actuarial-premium input::placeholder {
+  color: #93a4b5 !important;
+  font-weight: 400;
+}
+
+/* Checkbox / radio */
+.actuarial-premium input[type="checkbox"],
+.actuarial-premium input[type="radio"] {
+  accent-color: var(--td-primary);
+  min-height: 0 !important;
+}
+
+/* ─── Left sidebar ────────────────────────────────────────────── */
+.actuarial-premium .td-premium-nav {
+  border-radius: var(--td-radius) !important;
+  border-color: var(--td-border) !important;
+  box-shadow: var(--td-shadow-sm) !important;
+  background: var(--td-surface) !important;
+  padding: 8px !important;
+}
+.actuarial-premium .td-premium-nav button {
+  border-radius: var(--td-radius-sm) !important;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+  padding-top: 9px !important;
+  padding-bottom: 9px !important;
+  margin-bottom: 2px !important;
+}
+.actuarial-premium .td-premium-nav button:not(.td-nav-active):hover {
+  background: var(--td-soft) !important;
+}
+.actuarial-premium .td-premium-nav .td-nav-active {
+  background: var(--td-navy) !important;
+  border-color: var(--td-navy) !important;
+  box-shadow: 0 2px 8px rgba(18, 59, 99, 0.18);
+}
+.actuarial-premium .td-premium-nav button p:first-of-type {
+  font-size: 13.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.4 !important;
+  letter-spacing: -0.01em;
+}
+.actuarial-premium .td-premium-nav .td-nav-active p:first-of-type {
+  font-weight: 500 !important;
+}
+.actuarial-premium .td-premium-nav button p:last-of-type {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
+  margin-top: 2px !important;
+}
+.actuarial-premium .td-premium-nav button:not(.td-nav-active) p:first-of-type {
+  color: var(--td-text);
+}
+.actuarial-premium .td-premium-nav span.h-5.w-5 {
+  font-weight: 500 !important;
+  font-size: 11px !important;
+}
+
+/* ─── Right summary panel ─────────────────────────────────────── */
+.actuarial-premium .wizard-summary-aside .ui-card {
+  border-radius: var(--td-radius);
+  border-color: var(--td-border);
+  box-shadow: var(--td-shadow-sm);
+}
+.actuarial-premium .wizard-summary-aside .ui-card h4 {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  color: var(--td-navy) !important;
+  margin-bottom: 10px !important;
+}
+.actuarial-premium .wizard-summary-aside .ui-card > div {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--td-text);
+}
+.actuarial-premium .wizard-summary-aside .ui-card[class*="bg-brand-primary-soft"] {
+  background: var(--td-soft) !important;
+  border-color: color-mix(in srgb, var(--td-primary) 16%, var(--td-border)) !important;
+}
+.actuarial-premium .wizard-summary-aside .ui-card[class*="bg-brand-primary-soft"] h4 {
+  color: var(--td-primary) !important;
+}
+
+.actuarial-premium .td-progress-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.actuarial-premium .td-progress-ring {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+.actuarial-premium .td-progress-ring svg {
+  transform: rotate(-90deg);
+}
+.actuarial-premium .td-progress-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--td-navy);
+  font-variant-numeric: tabular-nums;
+}
+.actuarial-premium .td-progress-meta .td-progress-steps {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--td-text);
+  font-variant-numeric: tabular-nums;
+}
+.actuarial-premium .td-progress-meta .td-progress-pct {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--td-muted);
+  margin-top: 2px;
+}
+.actuarial-premium .wizard-summary-aside .accent-badge,
+.actuarial-premium .wizard-summary-aside span.inline-flex {
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500 !important;
+}
+
+/* Soft status badges (Davacı / Dava dışı / similar) */
+.actuarial-premium main .accent-badge,
+.actuarial-premium main span.inline-flex.rounded-full,
+.actuarial-premium main span.inline-block.rounded,
+.actuarial-premium main span.inline-block.rounded-full {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.3;
+  border-radius: 999px !important;
+  padding: 3px 8px !important;
+}
+.actuarial-premium main span.bg-\[\#EEF2F4\],
+.actuarial-premium main span.bg-\[\#F5F7FA\] {
+  background: var(--td-soft) !important;
+  color: var(--td-navy) !important;
+  border-color: color-mix(in srgb, var(--td-primary) 18%, var(--td-border)) !important;
+}
+
+/* ─── Tables — ALL steps (not only education) ─────────────────── */
+.actuarial-premium main .overflow-x-auto {
+  border-radius: var(--td-radius-sm) !important;
+  border-color: var(--td-border) !important;
+  box-shadow: none !important;
+}
+
+.actuarial-premium main table,
+.actuarial-premium .td-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.actuarial-premium main table th,
+.actuarial-premium .td-table th {
+  background: #eef3f8 !important;
+  border-bottom: 1px solid var(--td-border-strong) !important;
+  border-right: 1px solid var(--td-border) !important;
+  color: var(--td-navy) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  padding: 8px 10px !important;
+  text-align: left;
+  /* Long Turkish headers may wrap; row height stays aligned via table layout */
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  vertical-align: middle;
+  line-height: 1.35;
+  hyphens: manual;
+}
+.actuarial-premium main table th:last-child,
+.actuarial-premium .td-table th:last-child {
+  border-right: none !important;
+}
+
+/* Dark section headers (ZMTS / Kasko) stay navy + white */
+.actuarial-premium main table th.bg-\[\#243746\],
+.actuarial-premium main table th.text-white {
+  background: var(--td-navy) !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.actuarial-premium main table td,
+.actuarial-premium .td-table td,
+.actuarial-premium main table td.font-semibold,
+.actuarial-premium main table td.font-medium,
+.actuarial-premium main table td.font-bold,
+.actuarial-premium .td-table td.font-semibold,
+.actuarial-premium .td-table td.font-medium,
+.actuarial-premium .td-table td.font-bold {
+  border-bottom: 1px solid color-mix(in srgb, var(--td-border) 85%, white) !important;
+  border-right: 1px solid color-mix(in srgb, var(--td-border) 70%, white) !important;
+  padding: 8px 8px !important;
+  color: var(--td-text) !important;
+  font-weight: 400 !important;
+  font-size: 12.5px !important;
+  /* Default: text cells (Hak Sahibi etc.) wrap inside column bounds */
+  white-space: normal !important;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  vertical-align: middle;
+  line-height: 1.35;
+}
+.actuarial-premium main table td:last-child,
+.actuarial-premium .td-table td:last-child {
+  border-right: none !important;
+}
+.actuarial-premium main table tbody tr:nth-child(even) td {
+  background: #fafcfe;
+}
+.actuarial-premium main table tbody tr:hover td {
+  background: #f3f7fb;
+}
+
+/* Name / label text columns — keep wrapping even when utilities fight */
+.actuarial-premium main table td.text-left,
+.actuarial-premium main table td.whitespace-normal,
+.actuarial-premium main table th.whitespace-normal,
+.actuarial-premium main table td:first-child {
+  white-space: normal !important;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+/* Soft floor for first (often Hak Sahibi / Süre) column — no geometry redesign */
+.actuarial-premium main table td:first-child,
+.actuarial-premium main table th:first-child {
+  min-width: 7.5rem;
+}
+
+/* Money / numeric columns stay single-line + tabular.
+   Do NOT force nowrap on text-center — period ranges / ages may wrap. */
+.actuarial-premium main table td.text-right,
+.actuarial-premium .td-table .td-num,
+.actuarial-premium main table td.td-num,
+.actuarial-premium main table .td-num {
+  white-space: nowrap !important;
+  overflow-wrap: normal;
+  word-break: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.actuarial-premium .td-table .td-num,
+.actuarial-premium main table td.text-right,
+.actuarial-premium main table td.tabular-nums.text-right,
+.actuarial-premium main table .tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.actuarial-premium .td-table .td-num,
+.actuarial-premium main table td.text-right {
+  text-align: right;
+}
+
+.actuarial-premium .td-table-total td,
+.actuarial-premium main table tr.td-table-total td,
+.actuarial-premium .td-table-total td.font-semibold,
+.actuarial-premium .td-table-total td.font-medium,
+.actuarial-premium .td-table-total td.font-bold,
+.actuarial-premium main table tfoot td {
+  background: #f0f5fa !important;
+  font-weight: 600 !important;
+  border-top: 1px solid var(--td-border-strong) !important;
+  color: var(--td-navy) !important;
+}
+.actuarial-premium .td-table-total-future td {
+  background: #eef8f4 !important;
+  border-top: 1px solid var(--td-mint-border) !important;
+}
+
+/* resultGridCls / review tables */
+.actuarial-premium main table .bg-\[\#F5F7FA\],
+.actuarial-premium main table .bg-brand-bg {
+  background: #eef3f8 !important;
+}
+
+/* ─── Education period banners ────────────────────────────────── */
+.actuarial-premium .td-period-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border-radius: var(--td-radius-sm);
+  margin-bottom: 8px;
+}
+.actuarial-premium .td-period-banner--past {
+  background: var(--td-soft);
+  border: 1px solid color-mix(in srgb, var(--td-primary) 14%, var(--td-border));
+}
+.actuarial-premium .td-period-banner--future {
+  background: var(--td-mint);
+  border: 1px solid var(--td-mint-border);
+}
+.actuarial-premium .td-period-banner-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--td-navy);
+}
+.actuarial-premium .td-period-banner-range {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--td-muted);
+  letter-spacing: 0;
+}
+.actuarial-premium .td-period-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.actuarial-premium .td-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--td-border);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text);
+  font-variant-numeric: tabular-nums;
+}
+.actuarial-premium .td-pill span {
+  color: var(--td-muted);
+  font-weight: 400;
+}
+.actuarial-premium .td-period-banner--future .td-pill {
+  border-color: var(--td-mint-border);
+}
+
+/* ─── Fault / beneficiary accents ─────────────────────────────── */
+.actuarial-premium main .bg-brand-primary,
+.actuarial-premium main .bg-\[\#243746\]:not(th) {
+  background-color: var(--td-navy) !important;
+}
+.actuarial-premium main .text-brand-primary,
+.actuarial-premium main .text-\[\#243746\] {
+  color: var(--td-navy) !important;
+}
+
+/* Soft badges (claimant status etc.) */
+.actuarial-premium main .rounded-full {
+  font-weight: 500 !important;
+  letter-spacing: 0;
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────── */
+.actuarial-premium .btn-primary {
+  background-color: var(--td-primary) !important;
+  border-radius: var(--td-radius-sm);
+  font-weight: 500 !important;
+  font-size: 13.5px;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.actuarial-premium .btn-primary:hover:not(:disabled) {
+  background-color: var(--td-primary-hover) !important;
+}
+.actuarial-premium .btn-secondary {
+  border-radius: var(--td-radius-sm);
+  border-color: var(--td-border);
+  color: var(--td-text);
+  font-weight: 500 !important;
+  font-size: 13.5px;
+  box-shadow: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.actuarial-premium .btn-secondary:hover:not(:disabled) {
+  background: var(--td-soft);
+  border-color: var(--td-border-strong);
+}
+.actuarial-premium .btn-danger {
+  border-radius: var(--td-radius-sm);
+  border-color: #f0c9c9;
+  color: var(--td-danger);
+  background: #fff8f7;
+  font-weight: 500 !important;
+  font-size: 13.5px;
+}
+.actuarial-premium .btn-danger:hover {
+  background: #fef0ef;
+}
+
+/* ─── Sticky bars ─────────────────────────────────────────────── */
+.actuarial-premium .td-premium-sticky {
+  border-color: var(--td-border) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 -4px 18px rgba(18, 59, 99, 0.06) !important;
+}
+.actuarial-premium .td-premium-sticky .td-sticky-meta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+.actuarial-premium .td-premium-sticky .td-sticky-file {
+  color: var(--td-primary);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+.actuarial-premium .td-premium-sticky .td-sticky-steps {
+  font-weight: 500;
+  color: var(--td-text);
+}
+
+/* Progress fill */
+.actuarial-premium .wizard-summary-aside div.h-1\.5 > div,
+.actuarial-premium .wizard-summary-aside div.h-1 > div,
+.actuarial-premium .td-premium-sticky div.h-1 > div,
+.actuarial-premium .td-premium-sticky div.h-1\.5 > div {
+  background: var(--td-primary) !important;
+}
+
+/* Review / result headings inside FormSection */
+.actuarial-premium main h3,
+.actuarial-premium main h4 {
+  letter-spacing: -0.01em;
+}
+.actuarial-premium main h4 {
+  font-weight: 600 !important;
+}
+
+/* Body copy comfort */
+.actuarial-premium main p,
+.actuarial-premium main li {
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* Validation field error surface (FormField .field-has-error) */
+.actuarial-premium .field-has-error .ui-input,
+.actuarial-premium .field-has-error input,
+.actuarial-premium .field-has-error select,
+.actuarial-premium .field-has-error textarea {
+  border-color: #f0c9c9 !important;
+  box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.1) !important;
+}
+.actuarial-premium .field-has-error .ui-input:focus,
+.actuarial-premium .field-has-error input:focus,
+.actuarial-premium .field-has-error select:focus,
+.actuarial-premium .field-has-error textarea:focus {
+  border-color: color-mix(in srgb, var(--td-danger) 45%, var(--td-border)) !important;
+  box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.14) !important;
+}
+.actuarial-premium .field-has-error > p[role="alert"] {
+  color: var(--td-danger) !important;
+  font-weight: 400;
+}

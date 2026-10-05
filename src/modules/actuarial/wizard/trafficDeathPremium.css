@@ -1,0 +1,5 @@
+/**
+ * @deprecated Use actuarialPremium.css — TRAFFIC_DEATH pilot styles are now shared.
+ * Kept as a thin re-export for any stale imports.
+ */
+@import "./actuarialPremium.css";

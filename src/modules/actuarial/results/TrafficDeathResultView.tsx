@@ -23,6 +23,7 @@ import {
   TRAFFIC_DEATH_RESPONSIBLE_LABELS,
   trafficDeathFaultSum,
 } from "../utils/trafficDeathFaultRates";
+import { deathExpenseFaultNote, migrateDeathExpenseTransport, resolvePreDeathTreatmentName } from "../utils/deathExpenses";
 import { MARRIAGE_CHILD_RATE_POINTS } from "../utils/marriageProbability";
 import { CHILD_EDUCATION_OPTIONS } from "../wizard/shared/segmentedChoice";
 import { DataTableWrap, FormSection, resultGridCls } from "../wizard/shared/FormPrimitives";
@@ -41,6 +42,7 @@ import {
   resolveDeceasedProbableLifeEndDate,
   isStaleExclusiveDeceasedLifeEndResult,
 } from "./capTrafficDeathToDeceasedLifeEnd";
+import { monetarySectionFromEngineResult } from "./trafficDeathReviewVisibility";
 import type {
   TrafficDeathFutureClaimantRow,
   TrafficDeathProcessedClaimantRow,
@@ -68,6 +70,23 @@ function TotalRow({ label, value, highlight }: { label: string; value: string; h
       </span>
     </div>
   );
+}
+
+/** Garame paylarını üst hak sahibi (claimantLosses) sırasına claimantId ile hizala. */
+function orderGarameSharesByClaimants<T extends { claimantId: string }>(
+  shares: T[],
+  claimants: Array<{ claimantId: string }>
+): T[] {
+  const byId = new Map(shares.map((row) => [row.claimantId, row]));
+  const ordered: T[] = [];
+  for (const claimant of claimants) {
+    const row = byId.get(claimant.claimantId);
+    if (!row) continue;
+    ordered.push(row);
+    byId.delete(claimant.claimantId);
+  }
+  for (const row of byId.values()) ordered.push(row);
+  return ordered;
 }
 
 function EmptyMotorNote() {
@@ -112,21 +131,11 @@ const INCOME_MODE_LABELS: Record<string, string> = {
 };
 
 const BENEFICIARY_COL_PCTS = [13, 8, 9, 9, 10, 7, 11, 11, 11, 11] as const;
-const CLAIMANT_LOSS_COL_PCTS = [12, 9, 9, 10, 12, 12, 12, 12, 12] as const;
+const CLAIMANT_LOSS_COL_PCTS = [14, 9, 9, 10, 11.5, 11.5, 11.5, 11.5, 12] as const;
 
 function ratePoint(value: number): string {
   return `%${value}`;
 }
-
-function formulaOperand(value: number): string {
-  return value.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
-}
-
-function formulaMoney(value: number): string {
-  return value.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-const INTEREST_YEAR_BASIS_LABEL = (36000).toLocaleString("tr-TR");
 
 function MarriageProbabilityResultCard({
   result,
@@ -257,21 +266,42 @@ function InsuranceMahsupCard({ result }: { result: TrafficDeathCalculationResult
                   </tbody>
                 </table>
               </DataTableWrap>
-              <div className="space-y-0.5 px-1 text-[12.5px] leading-relaxed tabular-nums text-[#1F2933]">
-                {(item.detail.interestSegments ?? []).map((segment, segmentIndex) => (
-                  <p key={`${segment.startDate}-${segmentIndex}`}>
-                    {formulaOperand(item.detail.principal)} × {segment.calendarDayCount} × {segment.annualRatePercent} /{" "}
-                    {INTEREST_YEAR_BASIS_LABEL} = {formulaMoney(segment.interestAmount)} TL
-                  </p>
-                ))}
-                <p>
-                  Toplam Faiz: {formulaMoney(item.detail.legalInterestAmount)} TL
-                </p>
-                <p>
-                  Güncellenmiş Ödeme: {formulaMoney(item.detail.principal)} + {formulaMoney(item.detail.legalInterestAmount)} ={" "}
-                  {formulaMoney(item.detail.updatedAmount)} TL
-                </p>
-              </div>
+              {(item.detail.interestSegments ?? []).length > 0 ? (
+                <DataTableWrap>
+                  <table className={`${resultGridCls.table} table-auto`} style={{ minWidth: "560px" }}>
+                    <thead>
+                      <tr>
+                        <th className={`${resultGridCls.cell} ${resultGridCls.th}`}>Başlangıç</th>
+                        <th className={`${resultGridCls.cell} ${resultGridCls.th}`}>Bitiş</th>
+                        <th className={`${resultGridCls.cell} ${resultGridCls.th}`}>Gün</th>
+                        <th className={`${resultGridCls.cell} ${resultGridCls.th}`}>Yasal Faiz Oranı</th>
+                        <th className={`${resultGridCls.cell} ${resultGridCls.th}`}>Faiz Tutarı</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(item.detail.interestSegments ?? []).map((segment, segmentIndex) => (
+                        <tr key={`${segment.startDate}-${segmentIndex}`}>
+                          <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ac}`}>
+                            {formatDateIso(segment.startDate)}
+                          </td>
+                          <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ac}`}>
+                            {formatDateIso(segment.endDate)}
+                          </td>
+                          <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar}`}>
+                            {segment.calendarDayCount}
+                          </td>
+                          <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar}`}>
+                            {formatPercent(segment.annualRatePercent)}
+                          </td>
+                          <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar}`}>
+                            {formatMoney(segment.interestAmount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </DataTableWrap>
+              ) : null}
             </div>
           ))}
         </div>
@@ -626,7 +656,10 @@ export function TrafficDeathResultView({
   const deathDate = draft.deceased.deathDate || draft.common.eventDate;
   const ageAtDeath = calendarAgeYmd(draft.deceased.birthDate, deathDate);
   const family = draft.deceasedFamilyInfo;
-  const displayMonetary = monetaryExclusiveStale ? null : cappedMonetary;
+  const displayMonetary = monetarySectionFromEngineResult(
+    cappedMonetary,
+    monetaryExclusiveStale
+  );
   const incomeMode =
     displayMonetary?.resolvedIncome.incomeMode ?? draft.accidentIncome.incomeMode;
   const paySource = displayMonetary
@@ -647,13 +680,12 @@ export function TrafficDeathResultView({
     selectedParties,
     draft.externalFaultRate
   );
-  const expenses = draft.deathExpenses;
+  const expenses = migrateDeathExpenseTransport(draft.deathExpenses);
   const hasExpenseInput =
     (expenses.preDeathTreatment ?? 0) > 0 ||
     (expenses.funeralCost ?? 0) > 0 ||
-    (expenses.transportCost ?? 0) > 0 ||
     Boolean(expenses.preDeathIncomeLossNotes?.trim()) ||
-    (expenses.otherExpenses?.length ?? 0) > 0;
+    expenses.otherExpenses.some((item) => (item.amount ?? 0) > 0 || Boolean(item.name?.trim()));
 
   const beneficiaryById = new Map(draft.beneficiaries.map((b) => [b.id, b]));
   const hasMoney = displayMonetary != null;
@@ -914,28 +946,40 @@ export function TrafficDeathResultView({
         {!hasExpenseInput && !hasMoney ? (
           <EmptyTableNote text="Bu adımda gider girilmedi." />
         ) : (
-          <div className="rounded-[10px] border border-[#DCE3E8] bg-white px-3 py-2">
+          <div className="rounded-[10px] border border-[#DCE3E8] bg-white px-3 py-2 space-y-2">
             <dl className="divide-y divide-[#DCE3E8]/40">
               <SummaryRow
-                label="Ölüm öncesi tedavi"
+                label={resolvePreDeathTreatmentName(expenses)}
                 value={formatMoney(
-                  displayMonetary?.deathExpenses.preDeathTreatment ?? expenses.preDeathTreatment ?? 0
-                )}
-              />
-              <SummaryRow
-                label="Cenaze gideri"
-                value={formatMoney(displayMonetary?.deathExpenses.funeralCost ?? expenses.funeralCost ?? 0)}
-              />
-              <SummaryRow
-                label="Nakil gideri"
-                value={formatMoney(
-                  displayMonetary?.deathExpenses.transportCost ?? expenses.transportCost ?? 0
+                  hasMoney
+                    ? (displayMonetary?.deathExpenses.grossPreDeathTreatment ??
+                        displayMonetary?.deathExpenses.preDeathTreatment ??
+                        expenses.preDeathTreatment ??
+                        0)
+                    : (expenses.preDeathTreatment ?? 0)
                 )}
               />
               {expenses.otherExpenses.map((item) => (
                 <SummaryRow key={item.id} label={item.name || "Diğer gider"} value={formatMoney(item.amount)} />
               ))}
+              <SummaryRow
+                label="Cenaze gideri"
+                value={formatMoney(
+                  hasMoney
+                    ? (displayMonetary?.deathExpenses.grossFuneralCost ??
+                        displayMonetary?.deathExpenses.funeralCost ??
+                        expenses.funeralCost ??
+                        0)
+                    : (expenses.funeralCost ?? 0)
+                )}
+              />
             </dl>
+            <p className="px-1 text-[12px] leading-relaxed text-[#C0392B]">
+              {deathExpenseFaultNote(
+                displayMonetary?.deceasedFaultRate ?? draft.deceasedFaultRate,
+                hasMoney ? "past" : "future"
+              )}
+            </p>
           </div>
         )}
       </FormSection>
@@ -1028,6 +1072,8 @@ export function TrafficDeathResultView({
 
       <MarriageProbabilityResultCard result={displayMonetary} hasMoney={hasMoney} />
 
+      {hasMoney && displayMonetary ? <InsuranceMahsupCard result={displayMonetary} /> : null}
+
       <FormSection title="Hak Sahibi Bazlı Destekten Yoksun Kalma Zararı">
         {!hasMoney ? (
           <EmptyMotorNote />
@@ -1107,47 +1153,79 @@ export function TrafficDeathResultView({
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.al} font-semibold`}>
-                    Toplam
-                  </td>
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td}`} colSpan={3} />
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar} font-semibold`}>
-                    {formatMoneyCell(displayMonetary!.totalAfterFault)}
-                  </td>
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar} font-semibold`}>
-                    {formatMoneyCell(
-                      displayMonetary!.totalAfterMarriageProbability ?? displayMonetary!.totalAfterFault
-                    )}
-                  </td>
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar} font-semibold`}>
-                    {formatMoneyCell(displayMonetary!.updatedZmtsPaymentTotal ?? 0)}
-                  </td>
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar} font-semibold`}>
-                    {formatMoneyCell(displayMonetary!.updatedCascoPaymentTotal ?? 0)}
-                  </td>
-                  <td className={`${resultGridCls.cell} ${resultGridCls.td} ${resultGridCls.ar} font-semibold`}>
-                    {formatMoneyCell(displayMonetary!.totalAfterClaimantInsurance)}
-                  </td>
-                </tr>
-              </tfoot>
             </table>
           </DataTableWrap>
         )}
       </FormSection>
-
-      {hasMoney && displayMonetary ? <InsuranceMahsupCard result={displayMonetary} /> : null}
 
       <FormSection title="Toplam ve İndirimler">
         {!hasMoney ? (
           <EmptyMotorNote />
         ) : (
           <div className="rounded-[10px] border border-[#DCE3E8] bg-white px-3 py-2 space-y-0.5">
-            <TotalRow label="İşlemiş dönem toplamı" value={formatMoney(displayMonetary!.processedTotal)} />
-            <TotalRow label="İşleyecek dönem toplamı" value={formatMoney(displayMonetary!.futureTotal)} />
-            <TotalRow label="Toplam destek zararı" value={formatMoney(displayMonetary!.totalSupportLoss)} highlight />
-            <TotalRow label="Kusur sonrası zarar" value={formatMoney(displayMonetary!.totalAfterFault)} highlight />
+            <div
+              className={
+                displayMonetary!.claimantLosses.length > 0
+                  ? "pb-1.5 mb-0.5 border-b border-[#243746]/20"
+                  : undefined
+              }
+            >
+              {displayMonetary!.claimantLosses.map((row) => {
+                const nameLabel = `${row.claimantName}${row.relationLabel ? ` (${row.relationLabel})` : ""}`;
+                const afterMahsup =
+                  row.lossAfterInsurancePayments ??
+                  row.lossAfterMarriageProbability ??
+                  row.lossAfterDeceasedFault ??
+                  row.totalLoss;
+                return (
+                  <TotalRow
+                    key={row.claimantId}
+                    label={`${nameLabel} Toplam Zarar Tazminatı Miktarı`}
+                    value={formatMoney(afterMahsup)}
+                  />
+                );
+              })}
+            </div>
+            {displayMonetary!.garameResponsibilityShares?.zmts ? (
+              <div className="pt-1">
+                <p className="px-1 py-1 text-[13px] font-semibold text-[#111827]">
+                  ZMTS — ZORUNLU MALİ TRAFİK SİGORTASI Sorumluluk Payları
+                </p>
+                {orderGarameSharesByClaimants(
+                  displayMonetary!.garameResponsibilityShares.zmts.shares,
+                  displayMonetary!.claimantLosses
+                ).map((row) => {
+                  const nameLabel = `${row.claimantName}${row.relationLabel ? ` (${row.relationLabel})` : ""}`;
+                  return (
+                    <TotalRow
+                      key={`zmts-garame-${row.claimantId}`}
+                      label={nameLabel}
+                      value={formatMoney(row.responsibilityShare)}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
+            {displayMonetary!.garameResponsibilityShares?.casco ? (
+              <div className="pt-1">
+                <p className="px-1 py-1 text-[13px] font-semibold text-[#111827]">
+                  Kasko Şirketi Sorumluluk Payları
+                </p>
+                {orderGarameSharesByClaimants(
+                  displayMonetary!.garameResponsibilityShares.casco.shares,
+                  displayMonetary!.claimantLosses
+                ).map((row) => {
+                  const nameLabel = `${row.claimantName}${row.relationLabel ? ` (${row.relationLabel})` : ""}`;
+                  return (
+                    <TotalRow
+                      key={`casco-garame-${row.claimantId}`}
+                      label={nameLabel}
+                      value={formatMoney(row.responsibilityShare)}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
             {displayMonetary!.marriageProbability?.applied ? (
               <p className="px-1 pt-1 text-[12.5px] leading-relaxed text-[#66727F]">
                 Evlenme ihtimali indirimi eş için hak sahibi bazlı uygulanmıştır.
@@ -1161,11 +1239,12 @@ export function TrafficDeathResultView({
               )}
             />
             <TotalRow
-              label="Cenaze / nakil giderleri"
-              value={formatMoney(
-                displayMonetary!.deathExpenses.funeralCost + displayMonetary!.deathExpenses.transportCost
-              )}
+              label="Cenaze giderleri"
+              value={formatMoney(displayMonetary!.deathExpenses.funeralCost)}
             />
+            <p className="px-1 pt-1 text-[12px] leading-relaxed text-[#C0392B]">
+              {deathExpenseFaultNote(displayMonetary!.deceasedFaultRate, "past")}
+            </p>
             {displayMonetary!.insuranceDeductions ||
             displayMonetary!.psdTotal != null ||
             (displayMonetary!.updatedZmtsPaymentTotal ?? 0) > 0 ||
@@ -1216,7 +1295,6 @@ export function TrafficDeathResultView({
                 value={formatMoney(displayMonetary!.priorPaymentsTotal)}
               />
             )}
-            <TotalRow label="Nihai toplam" value={formatMoney(displayMonetary!.finalCompensation)} highlight />
           </div>
         )}
       </FormSection>

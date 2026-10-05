@@ -1,6 +1,6 @@
 import type { StepProps } from "./wizardTypes";
 import { DataTableWrap, FormField, FormSection, TextSelect, TextTextarea } from "./FormPrimitives";
-import { formatDateIso } from "../../utils/formatDisplay";
+import { formatDateIso, formatKn8, formatMoney } from "../../utils/formatDisplay";
 import {
   MARRIAGE_CHILD_COUNT_MAX,
   MARRIAGE_CHILD_RATE_POINTS,
@@ -9,6 +9,7 @@ import {
   resolveMarriageProbabilityPreview,
   type MarriageProbabilityPreview,
 } from "../../utils/marriageProbability";
+import { resolveEducationExpensePreview } from "../../utils/educationExpenseDeduction";
 
 const childOptions = Array.from({ length: MARRIAGE_CHILD_COUNT_MAX + 1 }, (_, n) => n);
 
@@ -207,23 +208,338 @@ function calendarAgeText(preview: MarriageProbabilityPreview): string {
 
 export function EducationExpenseStep({ draft, onChange }: StepProps) {
   if (draft.calculationType !== "TRAFFIC_DEATH") return null;
+  const education = draft.educationExpenseDeduction ?? { notes: "", educationEndDate: "" };
+  const eventDate = draft.common.eventDate?.trim() || "";
+  const calculationDate = draft.common.calculationDate?.trim() || "";
+  const preview = resolveEducationExpensePreview({
+    ...draft,
+    educationExpenseDeduction: education,
+  });
+
+  const patchEducation = (partial: Partial<typeof education>) => {
+    onChange({
+      ...draft,
+      educationExpenseDeduction: { ...education, ...partial },
+    });
+  };
+
+  const fatherName = preview.father?.claimantName.toLocaleUpperCase("tr-TR") ?? null;
+  const motherName = preview.mother?.claimantName.toLocaleUpperCase("tr-TR") ?? null;
+  const hasReady =
+    preview.status === "READY" &&
+    (preview.pastPeriods.length > 0 || preview.futurePeriods.length > 0);
+
   return (
-    <FormSection
-      title="Eğitim Gideri İndirimi"
-      description="Eğitim gideri indirimi oranı bu sürümde henüz hesaplanmaz. Notlarınız kayda alınır; parasal sonuca etkisi yoktur."
-    >
-      <FormField label="Not" hint="Bu alan sonraki hesap kuralı için saklanır. Şimdilik tutar üretmez.">
-        <TextTextarea
-          value={draft.educationExpenseDeduction?.notes ?? ""}
-          onChange={(e) =>
-            onChange({
-              ...draft,
-              educationExpenseDeduction: { notes: e.target.value },
-            })
-          }
-          placeholder="Eğitim gideri ile ilgili not"
-        />
-      </FormField>
-    </FormSection>
+    <div className="space-y-5">
+      <FormSection title="Eğitim Gideri İndirimi">
+        <div className="td-edu-info">
+          İşlemiş dönem tarihsel net asgari ücretle; işleyecek dönem mevcut %10 artış / %10 iskonto (KN)
+          motoruyla hesaplanır. Çalışma ve Gelir ücreti kullanılmaz.
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <FormField label="Kaza Tarihi" hint="İşlemiş dönem başlangıcı — dosya olay tarihinden.">
+            <input type="date" value={eventDate} disabled className="ui-input w-full" />
+          </FormField>
+          <FormField label="Hesap Tarihi" hint="İşlemiş / işleyecek ayrım sınırı — dosya hesap tarihinden.">
+            <input type="date" value={calculationDate} disabled className="ui-input w-full" />
+          </FormField>
+          <FormField
+            label="Öğrenimin Bitirileceği Tarih"
+            hint="İşleyecek dönem bitişi. Kaza tarihinden önce olamaz."
+          >
+            <input
+              type="date"
+              value={education.educationEndDate ?? ""}
+              min={eventDate || undefined}
+              onChange={(e) => patchEducation({ educationEndDate: e.target.value })}
+              className="ui-input w-full"
+            />
+          </FormField>
+        </div>
+        {preview.status === "INVALID_RANGE" ? (
+          <p className="text-[12.5px] text-[#C0392B]">
+            Öğrenimin bitirileceği tarih kaza tarihinden önce olamaz (veya kaza/hesap tarihi geçersiz).
+          </p>
+        ) : null}
+        {preview.status === "NO_PARENTS" ? (
+          <p className="text-[12.5px] text-amber-800">
+            Yetiştirme gideri için dosyada Anne veya Baba hak sahibi bulunamadı.
+          </p>
+        ) : null}
+        {preview.status === "NO_MIN_WAGE" ? (
+          <p className="text-[12.5px] text-amber-800">
+            Seçilen tarih aralığı için tanımlı net asgari ücret dönemi bulunamadı.
+          </p>
+        ) : null}
+        <FormField label="Not" hint="İsteğe bağlı. Hesap tutarını etkilemez.">
+          <TextTextarea
+            value={education.notes ?? ""}
+            onChange={(e) => patchEducation({ notes: e.target.value })}
+            placeholder="Eğitim gideri ile ilgili not"
+          />
+        </FormField>
+      </FormSection>
+
+      {hasReady ? (
+        <FormSection title="Yetiştirme Gideri Hesabı">
+          {preview.pastPeriods.length > 0 ? (
+            <div className="space-y-2">
+              <div className="td-period-banner td-period-banner--past">
+                <div>
+                  <span className="td-period-banner-title">İŞLEMİŞ DÖNEM</span>
+                  <span className="td-period-banner-range">
+                    {formatDateIso(preview.startDate)} – {formatDateIso(preview.calculationDate)}
+                  </span>
+                </div>
+                <div className="td-period-pills">
+                  <span className="td-pill">
+                    <span>Dönem</span>
+                    {formatMoney(preview.pastPeriodExpenseTotal)} TL
+                  </span>
+                  {preview.father ? (
+                    <span className="td-pill">
+                      <span>Baba</span>
+                      {formatMoney(preview.fatherPastTotal)} TL
+                    </span>
+                  ) : null}
+                  {preview.mother ? (
+                    <span className="td-pill">
+                      <span>Anne</span>
+                      {formatMoney(preview.motherPastTotal)} TL
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <DataTableWrap className="td-table-wrap">
+                <table className="td-table min-w-[980px]">
+                  <thead>
+                    <tr>
+                      <th className="!whitespace-normal leading-snug">YILLAR</th>
+                      <th className="!whitespace-normal leading-snug">ASGARİ ÜCRET</th>
+                      <th className="!whitespace-normal leading-snug">GÜNLÜK ÜCRET</th>
+                      <th>GÜN</th>
+                      <th className="!whitespace-normal leading-snug">DÖNEM GİDERİ</th>
+                      <th className="!whitespace-normal leading-snug">
+                        YETİŞTİRME GİDERİ
+                        <br />
+                        PAY ORANI %
+                      </th>
+                      {fatherName ? (
+                        <th className="!whitespace-normal leading-snug">
+                          {fatherName}
+                          <br />
+                          YETİŞTİRME GİDERİ
+                        </th>
+                      ) : null}
+                      {motherName ? (
+                        <th className="!whitespace-normal leading-snug">
+                          {motherName}
+                          <br />
+                          YETİŞTİRME GİDERİ
+                        </th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.pastPeriods.map((row) => (
+                      <tr key={`past_${row.startDate}_${row.endDate}`}>
+                        <td>
+                          {formatDateIso(row.startDate)} – {formatDateIso(row.endDate)}
+                        </td>
+                        <td className="td-num">{formatMoney(row.netMinWage)}</td>
+                        <td className="td-num">{formatMoney(row.dailyWage)}</td>
+                        <td className="td-num">{row.dayCount}</td>
+                        <td className="td-num">{formatMoney(row.periodExpense)}</td>
+                        <td className="td-num">%{(row.shareRate * 100).toFixed(0)}</td>
+                        {preview.father ? (
+                          <td className="td-num">{formatMoney(row.fatherRearingExpense)}</td>
+                        ) : null}
+                        {preview.mother ? (
+                          <td className="td-num">{formatMoney(row.motherRearingExpense)}</td>
+                        ) : null}
+                      </tr>
+                    ))}
+                    <tr className="td-table-total">
+                      <td colSpan={4}>İŞLEMİŞ TOPLAM</td>
+                      <td className="td-num">{formatMoney(preview.pastPeriodExpenseTotal)}</td>
+                      <td>—</td>
+                      {preview.father ? (
+                        <td className="td-num">{formatMoney(preview.fatherPastTotal)}</td>
+                      ) : null}
+                      {preview.mother ? (
+                        <td className="td-num">{formatMoney(preview.motherPastTotal)}</td>
+                      ) : null}
+                    </tr>
+                  </tbody>
+                </table>
+              </DataTableWrap>
+            </div>
+          ) : null}
+
+          {preview.futurePeriods.length > 0 ? (
+            <div className="space-y-2 pt-3">
+              <div className="td-period-banner td-period-banner--future">
+                <div>
+                  <span className="td-period-banner-title">İŞLEYECEK DÖNEM</span>
+                  <span className="td-period-banner-range">
+                    {formatDateIso(preview.futurePeriods[0]?.startDate)} –{" "}
+                    {formatDateIso(preview.endDate)}
+                    {preview.futureBaseNetMinWage != null
+                      ? ` · Baz net asgari ücret: ${formatMoney(preview.futureBaseNetMinWage)}`
+                      : ""}
+                  </span>
+                </div>
+                <div className="td-period-pills">
+                  <span className="td-pill">
+                    <span>Dönem</span>
+                    {formatMoney(preview.futurePeriodExpenseTotal)} TL
+                  </span>
+                  {preview.father ? (
+                    <span className="td-pill">
+                      <span>Baba</span>
+                      {formatMoney(preview.fatherFutureTotal)} TL
+                    </span>
+                  ) : null}
+                  {preview.mother ? (
+                    <span className="td-pill">
+                      <span>Anne</span>
+                      {formatMoney(preview.motherFutureTotal)} TL
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <DataTableWrap className="td-table-wrap">
+                <table className="td-table min-w-[1100px]">
+                  <thead>
+                    <tr>
+                      <th className="!whitespace-normal leading-snug">YILLAR</th>
+                      <th>GÜN</th>
+                      <th className="!whitespace-normal leading-snug">GÜNLÜK ÜCRET</th>
+                      <th className="!whitespace-normal leading-snug">
+                        ÇARPAN
+                        <br />
+                        KN
+                      </th>
+                      <th className="!whitespace-normal leading-snug">
+                        ÇARPAN
+                        <br />
+                        (1/KN)
+                      </th>
+                      <th className="!whitespace-normal leading-snug">
+                        ARTIRILMIŞ
+                        <br />
+                        GİDER
+                      </th>
+                      <th className="!whitespace-normal leading-snug">
+                        İSKONTOLU
+                        <br />
+                        DÖNEM GİDERİ
+                      </th>
+                      <th className="!whitespace-normal leading-snug">
+                        PAY
+                        <br />
+                        %
+                      </th>
+                      {fatherName ? (
+                        <th className="!whitespace-normal leading-snug">
+                          {fatherName}
+                          <br />
+                          YETİŞTİRME GİDERİ
+                        </th>
+                      ) : null}
+                      {motherName ? (
+                        <th className="!whitespace-normal leading-snug">
+                          {motherName}
+                          <br />
+                          YETİŞTİRME GİDERİ
+                        </th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.futurePeriods.map((row) => (
+                      <tr key={`future_${row.startDate}_${row.endDate}`}>
+                        <td>
+                          {formatDateIso(row.startDate)} – {formatDateIso(row.endDate)}
+                        </td>
+                        <td className="td-num">{row.dayCount}</td>
+                        <td className="td-num">{formatMoney(row.dailyWage)}</td>
+                        <td className="td-num">{formatKn8(row.kn)}</td>
+                        <td className="td-num">{formatKn8(row.discountFactor)}</td>
+                        <td className="td-num">{formatMoney(row.increasedExpense)}</td>
+                        <td className="td-num">{formatMoney(row.discountedExpense)}</td>
+                        <td className="td-num">%{(row.shareRate * 100).toFixed(0)}</td>
+                        {preview.father ? (
+                          <td className="td-num">{formatMoney(row.fatherRearingExpense)}</td>
+                        ) : null}
+                        {preview.mother ? (
+                          <td className="td-num">{formatMoney(row.motherRearingExpense)}</td>
+                        ) : null}
+                      </tr>
+                    ))}
+                    <tr className="td-table-total td-table-total-future">
+                      <td colSpan={6}>İŞLEYECEK TOPLAM</td>
+                      <td className="td-num">{formatMoney(preview.futurePeriodExpenseTotal)}</td>
+                      <td>—</td>
+                      {preview.father ? (
+                        <td className="td-num">{formatMoney(preview.fatherFutureTotal)}</td>
+                      ) : null}
+                      {preview.mother ? (
+                        <td className="td-num">{formatMoney(preview.motherFutureTotal)}</td>
+                      ) : null}
+                    </tr>
+                  </tbody>
+                </table>
+              </DataTableWrap>
+            </div>
+          ) : null}
+
+          <DataTableWrap className="td-table-wrap">
+            <table className="td-table mt-3 min-w-[640px]">
+              <thead>
+                <tr>
+                  <th>ÖZET</th>
+                  {preview.father ? <th>{fatherName} YETİŞTİRME GİDERİ</th> : null}
+                  {preview.mother ? <th>{motherName} YETİŞTİRME GİDERİ</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>İşlemiş Dönem</td>
+                  {preview.father ? (
+                    <td className="td-num">{formatMoney(preview.fatherPastTotal)}</td>
+                  ) : null}
+                  {preview.mother ? (
+                    <td className="td-num">{formatMoney(preview.motherPastTotal)}</td>
+                  ) : null}
+                </tr>
+                <tr>
+                  <td>İşleyecek Dönem</td>
+                  {preview.father ? (
+                    <td className="td-num">{formatMoney(preview.fatherFutureTotal)}</td>
+                  ) : null}
+                  {preview.mother ? (
+                    <td className="td-num">{formatMoney(preview.motherFutureTotal)}</td>
+                  ) : null}
+                </tr>
+                <tr className="td-table-total">
+                  <td>Toplam Yetiştirme Gideri</td>
+                  {preview.father ? (
+                    <td className="td-num">{formatMoney(preview.fatherTotal)}</td>
+                  ) : null}
+                  {preview.mother ? (
+                    <td className="td-num">{formatMoney(preview.motherTotal)}</td>
+                  ) : null}
+                </tr>
+              </tbody>
+            </table>
+          </DataTableWrap>
+          <p className="px-1 pt-2 text-[12px] leading-relaxed text-[#66727F]">
+            Bu tutarlar yetiştirme gideri breakdown’ı olarak üretilir; nihai zarara bu sürümde otomatik
+            mahsup edilmez.
+          </p>
+        </FormSection>
+      ) : null}
+    </div>
   );
 }

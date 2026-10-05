@@ -32,6 +32,12 @@ import {
 } from "../shared/FormPrimitives";
 import type { StepProps } from "../shared/wizardTypes";
 import { errorFor } from "../shared/wizardTypes";
+import {
+  deathExpenseFaultNote,
+  emptyDeathOtherExpense,
+  migrateDeathExpenseTransport,
+  resolvePreDeathTreatmentName,
+} from "../../utils/deathExpenses";
 
 function updateCommon(draft: CalculationDraft, patch: Partial<CommonCaseInfo>): CalculationDraft {
   return { ...draft, common: { ...draft.common, ...patch } };
@@ -1145,64 +1151,125 @@ export function GenericExpensesStep({ draft, onChange }: StepProps) {
 
 export function DeathExpensesStep({ draft, onChange }: StepProps) {
   if (draft.calculationType !== "TRAFFIC_DEATH") return null;
-  const block = draft.deathExpenses;
+  const block = migrateDeathExpenseTransport(draft.deathExpenses);
+  const others = block.otherExpenses ?? [];
+  const primaryName = resolvePreDeathTreatmentName(block);
+  const patchExpenses = (next: typeof block) =>
+    onChange({
+      ...draft,
+      deathExpenses: migrateDeathExpenseTransport(next),
+    });
   return (
     <FormSection>
-      <FormGrid>
-        <FormField label="Ölüm öncesi tedavi gideri">
-          <CurrencyInput
-            value={block.preDeathTreatment ?? 0}
-            onChange={(v) =>
-              onChange({
-                ...draft,
-                deathExpenses: {
-                  ...block,
-                  preDeathTreatment: v === 0 ? undefined : v,
-                },
-              })
-            }
-          />
-        </FormField>
+      <div className="space-y-3">
+        <div className="rounded-[10px] border border-[#DCE3E8] bg-white p-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <FormField label="Gider adı">
+              <TextInput
+                value={primaryName}
+                onChange={(e) =>
+                  patchExpenses({
+                    ...block,
+                    preDeathTreatmentName: e.target.value,
+                  })
+                }
+              />
+            </FormField>
+            <FormField label="Tutar">
+              <CurrencyInput
+                value={block.preDeathTreatment ?? 0}
+                onChange={(v) =>
+                  patchExpenses({
+                    ...block,
+                    preDeathTreatment: v === 0 ? undefined : v,
+                    preDeathTreatmentName: block.preDeathTreatmentName ?? primaryName,
+                  })
+                }
+              />
+            </FormField>
+          </div>
+        </div>
+        <AddRowButton
+          label="+ Ekle"
+          onClick={() =>
+            patchExpenses({
+              ...block,
+              preDeathTreatmentName: block.preDeathTreatmentName ?? primaryName,
+              otherExpenses: [...others, emptyDeathOtherExpense()],
+            })
+          }
+        />
+        {others.map((row) => (
+          <div key={row.id} className="rounded-[10px] border border-[#DCE3E8] bg-white p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <FormField label="Gider adı">
+                  <TextInput
+                    value={row.name}
+                    onChange={(e) =>
+                      patchExpenses({
+                        ...block,
+                        otherExpenses: others.map((x) =>
+                          x.id === row.id ? { ...x, name: e.target.value } : x
+                        ),
+                      })
+                    }
+                  />
+                </FormField>
+                <FormField label="Tutar">
+                  <CurrencyInput
+                    value={row.amount}
+                    onChange={(v) =>
+                      patchExpenses({
+                        ...block,
+                        otherExpenses: others.map((x) =>
+                          x.id === row.id ? { ...x, amount: v } : x
+                        ),
+                      })
+                    }
+                  />
+                </FormField>
+              </div>
+              <div className="pt-6">
+                <DeleteIconButton
+                  title="Gideri sil"
+                  onClick={() =>
+                    patchExpenses({
+                      ...block,
+                      otherExpenses: others.filter((x) => x.id !== row.id),
+                    })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        ))}
         <FormField label="Cenaze gideri">
           <CurrencyInput
             value={block.funeralCost ?? 0}
             onChange={(v) =>
-              onChange({
-                ...draft,
-                deathExpenses: {
-                  ...block,
-                  funeralCost: v === 0 ? undefined : v,
-                },
+              patchExpenses({
+                ...block,
+                funeralCost: v === 0 ? undefined : v,
               })
             }
           />
         </FormField>
-        <FormField label="Nakil gideri">
-          <CurrencyInput
-            value={block.transportCost ?? 0}
-            onChange={(v) =>
-              onChange({
-                ...draft,
-                deathExpenses: {
-                  ...block,
-                  transportCost: v === 0 ? undefined : v,
-                },
+        <p className="text-[12px] leading-relaxed text-[#C0392B]">
+          {deathExpenseFaultNote(draft.deceasedFaultRate, "future")}
+        </p>
+        <FormField label="Ölüm öncesi kazanç kaybı notu">
+          <TextTextarea
+            value={block.preDeathIncomeLossNotes ?? ""}
+            onChange={(e) =>
+              patchExpenses({
+                ...block,
+                preDeathIncomeLossNotes: e.target.value,
               })
             }
           />
         </FormField>
-      </FormGrid>
-      <FormField label="Ölüm öncesi kazanç kaybı notu">
-        <TextTextarea
-          value={block.preDeathIncomeLossNotes ?? ""}
-          onChange={(e) =>
-            onChange({
-              ...draft,
-              deathExpenses: { ...block, preDeathIncomeLossNotes: e.target.value },
-            })
-          }
-        />
-      </FormField>
+      </div>
     </FormSection>
   );
 }

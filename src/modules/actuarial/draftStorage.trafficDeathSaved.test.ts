@@ -44,7 +44,7 @@ describe("hydrateTrafficDeathDraft", () => {
     expect(hydrated.beneficiaries[0]?.remarried).toBe(true);
     expect(hydrated.beneficiaries[0]?.remarriageDate).toBe("2025-01-01");
     expect(hydrated.marriageProbabilityDeduction).toEqual({ under18ChildCount: 2, note: "eş notu" });
-    expect(hydrated.educationExpenseDeduction).toEqual({ notes: "eğitim notu" });
+    expect(hydrated.educationExpenseDeduction).toEqual({ notes: "eğitim notu", educationEndDate: "" });
     expect(hydrated.sosyalYardimOdenekleri).toEqual([]);
     expect(hydrated.capitalValueDocuments).toEqual([]);
     expect(hydrated.zmtsPayments).toEqual([]);
@@ -57,7 +57,7 @@ describe("hydrateTrafficDeathDraft", () => {
       educationExpenseDeduction: { ready: false },
     });
     expect(legacy.marriageProbabilityDeduction).toEqual({ under18ChildCount: 0, note: "" });
-    expect(legacy.educationExpenseDeduction).toEqual({ notes: "" });
+    expect(legacy.educationExpenseDeduction).toEqual({ notes: "", educationEndDate: "" });
     expect(legacy.capitalValueDocuments).toEqual([]);
     expect(legacy.priorPayments).toEqual([]);
 

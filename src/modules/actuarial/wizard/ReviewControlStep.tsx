@@ -12,6 +12,7 @@ import type { TrafficDeathSupportPeriodsResponse } from "../types/trafficDeathSu
 import type { TrafficDeathCalculationResult } from "../types/trafficDeathResult";
 import { getWizardSteps } from "./configs";
 import { FormSection, InfoAlert, WarningAlert } from "./shared/FormPrimitives";
+import { trafficDeathReportActionsVisible } from "../results/trafficDeathReviewVisibility";
 
 export function ReviewControlStep({
   draft,
@@ -196,13 +197,18 @@ export function ReviewControlStep({
         </>
       )}
 
-      {showDeathResult && trafficDeathRunResult && onTrafficDeathReport && (
+      {trafficDeathReportActionsVisible({
+        reviewFlowPhase,
+        calculationType: draft.calculationType,
+        runResult: trafficDeathRunResult,
+        hasReportHandler: Boolean(onTrafficDeathReport),
+      }) && (
         <div className="rounded-[10px] border border-[#DCE3E8] bg-white px-3 py-2.5 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-medium text-[#1F2933] mr-auto">Bilirkişi hesap raporu</span>
             <button
               type="button"
-              onClick={() => onTrafficDeathReport("docx")}
+              onClick={() => onTrafficDeathReport?.("docx")}
               disabled={trafficDeathReporting != null}
               className="btn-secondary min-h-[36px] px-4 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -210,7 +216,7 @@ export function ReviewControlStep({
             </button>
             <button
               type="button"
-              onClick={() => onTrafficDeathReport("pdf")}
+              onClick={() => onTrafficDeathReport?.("pdf")}
               disabled={trafficDeathReporting != null}
               className="btn-primary min-h-[36px] px-4 disabled:opacity-50 disabled:cursor-not-allowed"
             >

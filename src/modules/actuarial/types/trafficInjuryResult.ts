@@ -121,4 +121,7 @@ export interface CalculationRunResponse {
     inputHash: string | null;
     calculationHashVersion: number;
   };
+  calculationId?: string;
+  trial?: import("./savedCalculation").TrialInfo | null;
+  trialCreditConsumed?: boolean;
 }

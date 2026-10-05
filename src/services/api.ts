@@ -82,8 +82,14 @@ export function toApiClientError(err: unknown): ApiClientError {
   return { status, message: ax.message || "İstek başarısız." };
 }
 
-/** 402 / erişim kodları — run ve report ortak mesaj */
+/** 402 / 403 erişim kodları — run ve report ortak mesaj */
 export function formatCalculationAccessError(error: ApiClientError): string {
+  if (error.code === "TRIAL_CREDITS_EXHAUSTED") {
+    return error.message || "Demo hesaplama krediniz tükendi.";
+  }
+  if (error.code === "TRIAL_EXPIRED") {
+    return error.message || "Deneme süreniz sona erdi.";
+  }
   if (error.status !== 402) return error.message;
   switch (error.code) {
     case "PAYMENT_REQUIRED_SINGLE":
@@ -109,6 +115,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      localStorage.removeItem("sessionId");
       if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
         window.location.href = "/login";
       }
@@ -125,16 +132,23 @@ export interface LoginPayload {
 export interface RegisterPayload extends LoginPayload {}
 
 export interface AuthResponse {
-  user: { id: string; email: string };
+  user: { id: string; email: string; name?: string | null };
   token: string;
+  sessionId?: string;
 }
 
 export function login(payload: LoginPayload): Promise<AuthResponse> {
-  return api.post<AuthResponse>("/auth/login", payload).then((r) => r.data);
+  return api.post<AuthResponse>("/auth/login", payload).then((r) => {
+    if (r.data.sessionId) localStorage.setItem("sessionId", r.data.sessionId);
+    return r.data;
+  });
 }
 
 export function register(payload: RegisterPayload): Promise<AuthResponse> {
-  return api.post<AuthResponse>("/auth/register", payload).then((r) => r.data);
+  return api.post<AuthResponse>("/auth/register", payload).then((r) => {
+    if (r.data.sessionId) localStorage.setItem("sessionId", r.data.sessionId);
+    return r.data;
+  });
 }
 
 export function requestPasswordReset(email: string): Promise<{ message: string }> {
@@ -143,6 +157,14 @@ export function requestPasswordReset(email: string): Promise<{ message: string }
 
 export function confirmPasswordReset(token: string, newPassword: string): Promise<{ message: string }> {
   return api.post<{ message: string }>("/auth/reset-password", { token, newPassword }).then((r) => r.data);
+}
+
+export function logoutSession(): Promise<{ ok: boolean }> {
+  const sessionId = localStorage.getItem("sessionId");
+  return api
+    .post<{ ok: boolean }>("/auth/logout", sessionId ? { sessionId } : {})
+    .then((r) => r.data)
+    .catch(() => ({ ok: false }));
 }
 
 /** Aktif: yalnızca veri doğrulama — parasal sonuç yok */
@@ -183,12 +205,17 @@ export function requestTrafficDeathSupportPeriods(
     });
 }
 
-/** TRAFFIC_INJURY hesap motoru — sunucu tarafı gerçek sonuç */
+/** TRAFFIC_INJURY / TRAFFIC_DEATH hesap motoru — sunucu tarafı gerçek sonuç */
 export function requestCalculationRun(
-  draft: CalculationDraftInput
+  draft: CalculationDraftInput,
+  options?: { calculationId?: string | null }
 ): Promise<CalculationRunResponse> {
+  const headers: Record<string, string> = {};
+  if (options?.calculationId) {
+    headers["X-Aktuerya-Calculation-Id"] = options.calculationId;
+  }
   return api
-    .post<CalculationRunResponse>("/calculations/run", draft)
+    .post<CalculationRunResponse>("/calculations/run", draft, { headers })
     .then((r) => r.data)
     .catch((err) => {
       throw toApiClientError(err);
@@ -299,6 +326,92 @@ export function downloadBlob(blob: Blob, filename: string): void {
 /** Oturum + abonelik yetenekleri — kaydetme izni backend kararı */
 export function fetchAuthMe(): Promise<AuthMeResponse> {
   return api.get<AuthMeResponse>("/auth/me").then((r) => r.data);
+}
+
+export type AccountProfileUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  phoneNormalized: string | null;
+  status: string;
+  role: string;
+};
+
+export function updateAccountProfile(body: {
+  name?: string | null;
+  phone?: string | null;
+}): Promise<{ user: AccountProfileUser }> {
+  return api.patch<{ user: AccountProfileUser }>("/auth/me", body).then((r) => r.data);
+}
+
+export function changePassword(body: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ ok: boolean; message: string }> {
+  return api
+    .post<{ ok: boolean; message: string }>("/auth/change-password", body)
+    .then((r) => r.data);
+}
+
+export type PricingSurveyStatusResponse = {
+  eligible: boolean;
+  reason:
+    | "SURVEY_DISABLED"
+    | "NO_COMPLETED_CALCULATION"
+    | "ALREADY_RESPONDED"
+    | "NOT_IN_AUDIENCE"
+    | null;
+  enabled: boolean;
+  audience: string;
+  alreadySubmitted: boolean;
+  completedCalculationCount: number;
+  submittedAt: string | null;
+};
+
+export function fetchPricingSurveyStatus(): Promise<PricingSurveyStatusResponse> {
+  return api.get<PricingSurveyStatusResponse>("/pricing-survey/status").then((r) => r.data);
+}
+
+export function markPricingSurveyShown(): Promise<{ ok: boolean }> {
+  return api.post<{ ok: boolean }>("/pricing-survey/shown").then((r) => r.data);
+}
+
+export function markPricingSurveyDismissed(): Promise<{ ok: boolean }> {
+  return api.post<{ ok: boolean }>("/pricing-survey/dismissed").then((r) => r.data);
+}
+
+export type TrialConfigResponse = {
+  durationDays: number;
+  initialCredits: number;
+};
+
+export function fetchTrialConfig(): Promise<TrialConfigResponse> {
+  return api.get<TrialConfigResponse>("/demo/config").then((r) => r.data);
+}
+
+export type DemoRequestPayload = {
+  email: string;
+  phone: string;
+  password: string;
+  name?: string;
+};
+
+const DEMO_ALREADY_USED_MESSAGE =
+  "Bu e-posta adresi veya telefon numarası ile daha önce deneme hesabı oluşturulmuştur. Her kullanıcı yalnızca bir kez deneme hakkından yararlanabilir.";
+
+export function requestDemoAccount(
+  body: DemoRequestPayload
+): Promise<{ message: string; email: string }> {
+  return api
+    .post<{ message: string; email: string }>("/demo/request", body)
+    .then((r) => r.data)
+    .catch((err) => {
+      const mapped = toApiClientError(err);
+      if (mapped.code === "DEMO_ALREADY_USED") {
+        throw { ...mapped, message: mapped.message || DEMO_ALREADY_USED_MESSAGE };
+      }
+      throw mapped;
+    });
 }
 
 /** Kalıcı tamamlanmış hesap listesi */

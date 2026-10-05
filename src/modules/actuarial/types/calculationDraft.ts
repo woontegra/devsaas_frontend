@@ -271,6 +271,8 @@ export interface SupportRelation {
 
 export interface DeathExpenseBlock {
   preDeathTreatment?: number;
+  /** Kullanıcı düzenleyebilir; yoksa varsayılan “Ölüm öncesi tedavi gideri”. */
+  preDeathTreatmentName?: string;
   preDeathIncomeLossNotes?: string;
   funeralCost?: number;
   transportCost?: number;
@@ -461,9 +463,11 @@ export interface MarriageProbabilityDeductionState {
   note?: string;
 }
 
-/** Eğitim gideri indirimi henüz parasal hesaba girmez. Not kaydı tutulur. */
+/** Eğitim / yetiştirme gideri. Not + öğrenimin bitirileceği tarih. */
 export interface EducationExpenseDeductionState {
   notes: string;
+  /** ISO yyyy-MM-dd. Yoksa hesap üretilmez (eski kayıt uyumu). */
+  educationEndDate?: string;
 }
 
 export function emptyMarriageProbabilityDeduction(): MarriageProbabilityDeductionState {
@@ -471,7 +475,7 @@ export function emptyMarriageProbabilityDeduction(): MarriageProbabilityDeductio
 }
 
 export function emptyEducationExpenseDeduction(): EducationExpenseDeductionState {
-  return { notes: "" };
+  return { notes: "", educationEndDate: "" };
 }
 
 export interface TrafficDeathDraft extends DraftBase {

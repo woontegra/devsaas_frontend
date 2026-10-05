@@ -68,15 +68,33 @@ export function FormField({
   hint?: string;
   children: ReactNode;
 }) {
+  const errorId = error ? `field-err-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined;
   return (
-    <div className="flex flex-col gap-1 min-w-0">
+    <div
+      className={`flex flex-col gap-1 min-w-0${error ? " field-has-error" : ""}`}
+      data-field-error={error ? "true" : undefined}
+    >
       <label className="text-[13px] font-semibold text-brand-text">
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
-      {children}
+      <div
+        className="min-w-0"
+        {...(error
+          ? {
+              "aria-invalid": true as const,
+              "aria-describedby": errorId,
+            }
+          : {})}
+      >
+        {children}
+      </div>
       {hint && !error && <p className="text-[11.5px] font-normal text-[#66727F]">{hint}</p>}
-      {error && <p className="text-[11.5px] font-normal text-red-600">{error}</p>}
+      {error && (
+        <p id={errorId} className="text-[11.5px] font-normal text-red-600" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

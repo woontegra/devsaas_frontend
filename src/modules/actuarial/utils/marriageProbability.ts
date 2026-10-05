@@ -184,9 +184,18 @@ export function coerceMarriageProbabilityDeduction(raw: unknown): {
   return { under18ChildCount: coerceUnder18ChildCount(obj.under18ChildCount), note };
 }
 
-export function coerceEducationExpenseDeduction(raw: unknown): { notes: string } {
-  const obj = raw && typeof raw === "object" ? (raw as { notes?: unknown }) : {};
-  return { notes: typeof obj.notes === "string" ? obj.notes : "" };
+export function coerceEducationExpenseDeduction(raw: unknown): {
+  notes: string;
+  educationEndDate: string;
+} {
+  const obj =
+    raw && typeof raw === "object"
+      ? (raw as { notes?: unknown; educationEndDate?: unknown })
+      : {};
+  return {
+    notes: typeof obj.notes === "string" ? obj.notes : "",
+    educationEndDate: typeof obj.educationEndDate === "string" ? obj.educationEndDate : "",
+  };
 }
 
 export function genderLabel(gender: string | null | undefined): string {

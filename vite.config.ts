@@ -14,10 +14,14 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/auth": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
+      "/demo": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
+      // /admin SPA route ile çakışmasın — admin API client DEV'de doğrudan :3000'e gider
       "/calculations": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
       "/cases": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
       "/calculate": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
       "/report": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
+      "/pricing-survey": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
+      "/analytics": { target: "http://localhost:3000", changeOrigin: true, configure: stripOrigin },
     },
   },
 });

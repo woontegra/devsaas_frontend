@@ -108,6 +108,16 @@ function ArrowIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path d="M4 7h16" strokeLinecap="round" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.5 7l.8 12a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9l.8-12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function PanelSection({
   title,
   icon,
@@ -152,7 +162,7 @@ function StatCard({
       <span className="ui-stat-icon-box">{icon}</span>
       <div className="min-w-0 flex-1 pr-4">
         <p className="ui-caption font-medium">{label}</p>
-        <p className="mt-1.5 text-[20px] sm:text-[22px] font-semibold tabular-nums text-brand-text tracking-[-0.02em] leading-none">
+        <p className="mt-1.5 text-[20px] sm:text-[22px] font-semibold tabular-nums text-brand-primary tracking-[-0.02em] leading-none">
           {value}
         </p>
         <p className="ui-caption mt-1.5">{subtitle}</p>
@@ -192,25 +202,34 @@ function SavedWorkListRow({
           <TypeIcon type={type in CALCULATION_TYPE_LABELS ? type : "TRAFFIC_INJURY"} size={16} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold text-brand-text truncate">{title}</span>
+          <span className="block text-[13px] font-medium text-brand-primary tracking-[-0.01em] truncate">{title}</span>
           <span className="ui-caption block truncate mt-0.5">
             {label}
             {dateLabel ? ` · ${dateLabel}` : ""}
             {` · ${statusLabel(item.status)}`}
           </span>
         </span>
-        <span className="shrink-0 btn-link text-[12px] opacity-80 group-hover:opacity-100">
-          Aç <ArrowIcon size={12} />
-        </span>
       </button>
-      <button
-        type="button"
-        className="shrink-0 text-[12px] text-red-600 hover:text-red-700 px-2 min-h-[36px]"
-        onClick={() => onDelete(item.id)}
-        title="Sil"
-      >
-        Sil
-      </button>
+      <span className="work-row-actions">
+        <button
+          type="button"
+          className="work-row-action"
+          aria-label="Çalışmayı aç"
+          title="Aç"
+          onClick={() => onOpen(item.id)}
+        >
+          <ArrowIcon size={15} />
+        </button>
+        <button
+          type="button"
+          className="work-row-action is-danger"
+          aria-label="Çalışmayı sil"
+          title="Sil"
+          onClick={() => onDelete(item.id)}
+        >
+          <TrashIcon />
+        </button>
+      </span>
     </div>
   );
 }
@@ -228,7 +247,7 @@ function WorkListRow({ item, onOpen }: { item: DraftSummary; onOpen: (type: Calc
         <TypeIcon type={item.type} size={16} />
       </span>
       <span className="min-w-0 flex-1 text-left">
-        <span className="block text-[13px] font-semibold text-brand-text truncate">{item.label}</span>
+        <span className="block text-[13px] font-medium text-brand-primary tracking-[-0.01em] truncate">{item.label}</span>
         <span className="ui-caption block truncate mt-0.5">
           {item.fileName !== "—" ? item.fileName : "Dosya adı girilmemiş"}
           {dateLabel ? ` · ${dateLabel}` : ""}
@@ -253,7 +272,7 @@ function QuickAccessRow({
   return (
     <button type="button" onClick={onClick} className="ui-list-row">
       <span className="ui-module-icon-box !w-9 !h-9">{icon}</span>
-      <span className="flex-1 text-left text-[13px] font-semibold text-brand-text">{label}</span>
+      <span className="flex-1 text-left text-[13px] font-medium text-brand-primary tracking-[-0.01em]">{label}</span>
       <ArrowIcon size={12} />
     </button>
   );
@@ -338,13 +357,6 @@ export function CalculationTypeSelect({
 
   return (
     <div className="calc-dashboard w-full pb-6">
-      <header className="calc-dashboard-hero">
-        <h1 className="ui-page-title">Aktüerya Hesaplama</h1>
-        <p className="ui-page-subtitle max-w-2xl">
-          Trafik ve iş kazası dosyaları için hesaplama modülleri.
-        </p>
-      </header>
-
       <section ref={newCalcRef} id="yeni-hesaplama" className="calc-dashboard-main">
         <h2 className="ui-section-title">Hesap Türleri</h2>
 
@@ -361,13 +373,13 @@ export function CalculationTypeSelect({
                 className="calc-dashboard-type-card ui-module-card-mock group motion-reduce:transform-none text-left"
                 style={{ animationDelay: `${index * 55}ms` }}
               >
-                <div className="flex items-start gap-3.5 sm:gap-4">
+                <div className="calc-type-card-top">
                   <span className="ui-module-icon-box">
                     <TypeIcon type={type} size={22} />
                   </span>
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <h3 className="ui-card-title">{CALCULATION_TYPE_LABELS[type]}</h3>
-                    <p className="ui-body-text mt-1.5 line-clamp-2">
+                    <h3 className="calc-type-card-title">{CALCULATION_TYPE_LABELS[type]}</h3>
+                    <p className="ui-body-text calc-type-card-desc line-clamp-2">
                       {CALCULATION_TYPE_DESCRIPTIONS[type]}
                     </p>
                   </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { readAuthRedirect } from "../auth/resetPasswordForm";
 import { login, requestPasswordReset } from "../services/api";
 import wordmark from "../assets/brand/logo-horizontal.png";
 
@@ -12,9 +13,11 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const [view, setView] = useState<"login" | "forgot">("login");
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirect = readAuthRedirect(location.state);
+  const [view, setView] = useState<"login" | "forgot">(redirect.view);
+  const [info, setInfo] = useState<string | null>(redirect.info);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +106,7 @@ export function LoginPage() {
                 />
               </div>
               {error && <p className="text-[12.5px] text-red-600">{error}</p>}
+              {info && <p className="text-[12.5px] text-brand-text">{info}</p>}
               <button type="submit" disabled={loading} className="btn-primary w-full min-h-[42px] px-4 disabled:opacity-50">
                 {loading ? "Bekleyin…" : "Giriş Yap"}
               </button>
@@ -139,7 +143,7 @@ export function LoginPage() {
             }}
             className="mt-5 text-[13px] text-brand-muted hover:text-brand-primary transition-colors duration-200 w-full text-center font-medium"
           >
-            {view === "forgot" ? "Giriş ekranına dön" : "Şifremi unuttum"}
+            {view === "forgot" ? "Giriş ekranına dön" : "Şifremi Unuttum"}
           </button>
         </div>
       </div>

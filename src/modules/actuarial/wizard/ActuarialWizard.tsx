@@ -17,6 +17,33 @@ import type {
   CalculationReviewSummaryResponse,
   ReviewFlowPhase,
 } from "../types/calculationReviewSummary";
+import "./actuarialPremium.css";
+
+function TrafficDeathProgressRing({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  const r = 22;
+  const c = 2 * Math.PI * r;
+  const offset = c - (pct / 100) * c;
+  return (
+    <div className="td-progress-ring" aria-hidden>
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r={r} fill="none" stroke="#E8EEF5" strokeWidth="5" />
+        <circle
+          cx="28"
+          cy="28"
+          r={r}
+          fill="none"
+          stroke="#0F4C81"
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+        />
+      </svg>
+      <span className="td-progress-ring-label">%{pct}</span>
+    </div>
+  );
+}
 
 export interface ActuarialWizardProps {
   draft: CalculationDraft;
@@ -257,18 +284,20 @@ export function ActuarialWizard({
   const StepComponent = current?.Component;
 
   return (
-    <div className="pb-[88px] lg:pb-[80px]">
+    <div className="pb-[88px] lg:pb-[80px] actuarial-premium">
       {/* ─── Header ───────────────────────────────────────────────── */}
-      <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="mb-3 flex items-start justify-between gap-3 td-premium-header">
         <div className="min-w-0 flex-1">
           <h1 className="text-[20px] sm:text-[22px] font-semibold text-[#1F2933] tracking-[-0.02em] leading-snug line-clamp-2">
             {CALCULATION_TYPE_LABELS[draft.calculationType]}
           </h1>
-          <p className="mt-1 text-[12px] font-normal text-[#66727F]">
+          <p className="mt-1 text-[12px] font-normal text-[#66727F] td-premium-status">
             {draftStatusLabel(draftSaveStatus, lastSavedAt)}
           </p>
           {activeSavedFileLabel && (
-            <p className="mt-1 text-[12px] font-medium text-[#243746]">{activeSavedFileLabel}</p>
+            <p className="mt-1 text-[12px] font-medium text-[#243746] td-premium-file-label">
+              {activeSavedFileLabel}
+            </p>
           )}
         </div>
 
@@ -372,7 +401,9 @@ export function ActuarialWizard({
       {/* ─── 3-kolon grid ───────────────────────────────────────── */}
       <div className="wizard-desktop-grid">
         {/* Left steps — desktop only */}
-        <nav className="hidden lg:block lg:sticky lg:top-[4rem] self-start rounded-[11px] border border-[#DCE3E8] bg-white p-2 shadow-[0_1px_4px_rgba(36,55,70,0.05)] max-h-[calc(100vh-6rem)] overflow-y-auto">
+        <nav
+          className="hidden lg:block lg:sticky lg:top-[4rem] self-start rounded-[11px] border border-[#DCE3E8] bg-white p-2 shadow-[0_1px_4px_rgba(36,55,70,0.05)] max-h-[calc(100vh-6rem)] overflow-y-auto td-premium-nav"
+        >
           {navSteps.map((s, i) => {
             const active = s.id === stepId;
             const done = validation?.completedSections.includes(s.sectionKey);
@@ -391,7 +422,7 @@ export function ActuarialWizard({
                 onClick={() => onStepChange(s.id)}
                 className={`w-full text-left rounded-[9px] px-2.5 py-2 mb-0.5 border transition-colors duration-200 min-h-[44px] ${
                   active
-                    ? "bg-[#243746] text-white border-[#243746]"
+                    ? "bg-[#243746] text-white border-[#243746] td-nav-active"
                     : "bg-white border-transparent hover:bg-[#EEF2F4]/60 text-[#1F2933]"
                 }`}
               >
@@ -410,11 +441,11 @@ export function ActuarialWizard({
                     {done && !active ? "✓" : i + 1}
                   </span>
                   <div className="min-w-0">
-                    <p className={`text-[13px] font-medium leading-snug ${active ? "text-white" : ""}`}>
+                    <p className={`text-[13.5px] font-normal leading-snug tracking-[-0.01em] ${active ? "text-white" : ""}`}>
                       {s.title}
                     </p>
                     <p
-                      className={`text-[11.5px] font-normal mt-0.5 leading-snug ${
+                      className={`text-[12px] font-normal mt-0.5 leading-snug ${
                         active ? "text-white/80" : done ? "text-emerald-600" : "text-[#66727F]"
                       }`}
                     >
@@ -494,11 +525,16 @@ export function ActuarialWizard({
             <FileSummaryLines draft={draft} />
           </SummaryCard>
           <SummaryCard title="İlerleme">
-            <p className="font-medium text-slate-800">
-              {stepIndex + 1} / {allIds.length} adım
-            </p>
-            <p className="text-slate-500">%{progressPct} tamamlandı</p>
-            <ProgressBar value={progressPct} />
+            <div className="td-progress-ring-wrap">
+              <TrafficDeathProgressRing value={progressPct} />
+              <div className="td-progress-meta">
+                <p className="td-progress-steps">
+                  {stepIndex + 1} / {allIds.length} adım
+                </p>
+                <p className="td-progress-pct">%{progressPct} tamamlandı</p>
+              </div>
+            </div>
+            <ProgressBar value={progressPct} thin />
             <div className="flex flex-wrap gap-1.5 pt-1">
               <span className="accent-badge">
                 Eksik: {missingTotal || "—"}
@@ -521,9 +557,11 @@ export function ActuarialWizard({
       </div>
 
       {/* ─── Mobile action bar ──────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#DCE3E8] bg-white lg:hidden pb-[env(safe-area-inset-bottom)]">
+      <div
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#DCE3E8] bg-white lg:hidden pb-[env(safe-area-inset-bottom)] td-premium-sticky"
+      >
         <div className="px-4 pt-2.5 pb-2.5">
-          <div className="flex items-center justify-between gap-2 mb-2 text-[13px] font-normal text-slate-500 tabular-nums">
+          <div className="flex items-center justify-between gap-2 mb-2 text-[13px] font-normal text-slate-500 tabular-nums td-sticky-meta">
             <span>{stepIndex + 1} / {allIds.length}</span>
             <span>%{progressPct}</span>
           </div>
@@ -581,7 +619,7 @@ export function ActuarialWizard({
             ) : (
               <button
                 type="button"
-                onClick={() => { onStepChange(reviewId); onValidate(); }}
+                onClick={() => { onValidate(); }}
                 disabled={validating || running || reviewSummaryLoading}
                 className="btn-primary min-h-[44px] px-4 flex-1"
               >
@@ -593,7 +631,9 @@ export function ActuarialWizard({
       </div>
 
       {/* ─── Desktop action bar ─────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#DCE3E8] bg-white hidden lg:block shadow-[0_-2px_10px_rgba(36,55,70,0.05)]">
+      <div
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#DCE3E8] bg-white hidden lg:block shadow-[0_-2px_10px_rgba(36,55,70,0.05)] td-premium-sticky"
+      >
         <div className="app-workspace wizard-action-bar-inner flex items-center gap-4 py-3">
           <div className="flex flex-wrap gap-2 shrink-0">
             {showSaveFileButton && (
@@ -614,14 +654,14 @@ export function ActuarialWizard({
             </button>
           </div>
 
-          <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0 px-1">
+          <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0 px-1 td-sticky-meta">
             {activeSavedFileLabel && (
-              <p className="text-[12px] font-medium text-[#243746] truncate max-w-full">
+              <p className="text-[12px] font-medium text-[#243746] truncate max-w-full td-sticky-file">
                 {activeSavedFileLabel}
               </p>
             )}
             <div className="flex items-center gap-2 text-[14px] font-normal text-slate-600 tabular-nums">
-              <span className="font-medium text-slate-800">
+              <span className="font-medium text-slate-800 td-sticky-steps">
                 {stepIndex + 1} / {allIds.length} adım
               </span>
               <span className="text-slate-300">·</span>
@@ -674,7 +714,7 @@ export function ActuarialWizard({
                 {!showResultPhase && (
                   <button
                     type="button"
-                    onClick={() => { onStepChange(reviewId); onValidate(); }}
+                    onClick={() => { onValidate(); }}
                     disabled={validating || reviewSummaryLoading || running}
                     className="btn-primary min-h-[40px] px-4"
                   >

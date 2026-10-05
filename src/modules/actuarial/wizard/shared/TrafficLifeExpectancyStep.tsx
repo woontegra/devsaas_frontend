@@ -661,6 +661,16 @@ function DeathZmtsGarameTable({
   }, [onChange, people, rows, synced]);
 
   const patchPerson = (claimantId: string, patch: Partial<NonNullable<InsurancePaymentRecord["deathGarameRows"]>[number]>) => {
+    // Garame aktifken kişi başı limit tüm kişilerde ortaktır; hangi satırdan girilirse hepsine yazılır.
+    if ("liabilityLimit" in patch) {
+      const liabilityLimit = patch.liabilityLimit;
+      onChange(
+        synced.map((row) =>
+          row.claimantId === claimantId ? { ...row, ...patch } : { ...row, liabilityLimit }
+        )
+      );
+      return;
+    }
     onChange(synced.map((row) => (row.claimantId === claimantId ? { ...row, ...patch } : row)));
   };
 

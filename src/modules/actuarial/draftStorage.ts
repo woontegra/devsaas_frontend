@@ -16,6 +16,7 @@ import {
   coerceEducationExpenseDeduction,
   coerceMarriageProbabilityDeduction,
 } from "./utils/marriageProbability";
+import { migrateDeathExpenseTransport } from "./utils/deathExpenses";
 
 export type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -73,7 +74,7 @@ export function hydrateTrafficDeathDraft(
     deceasedFaultRate,
     responsibleParties: coerceResponsibleParties(rest.responsibleParties),
     externalFaultRate,
-    deathExpenses: rest.deathExpenses ?? base.deathExpenses,
+    deathExpenses: migrateDeathExpenseTransport(rest.deathExpenses ?? base.deathExpenses),
     priorPayments: rest.priorPayments ?? [],
     insurance: rest.insurance ?? base.insurance,
     marriageProbabilityDeduction: coerceMarriageProbabilityDeduction(rest.marriageProbabilityDeduction),

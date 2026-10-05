@@ -29,20 +29,33 @@ import {
   saveTypeSession,
   TRAFFIC_DEATH_LIFE_END_EPOCH,
 } from "./typeSessionStorage";
-import { toApiClientError, validateCalculationDraft, requestCalculationRun, requestCalculationReviewSummary, requestTrafficInjuryWordReport, requestTrafficDeathReport, downloadBlob, formatCalculationAccessError, fetchAuthMe, getSavedCalculation, saveCompletedCalculation, saveNamedCalculation, updateNamedCalculation } from "../../services/api";
+import { toApiClientError, validateCalculationDraft, requestCalculationRun, requestCalculationReviewSummary, requestTrafficInjuryWordReport, requestTrafficDeathReport, downloadBlob, formatCalculationAccessError, fetchAuthMe, getSavedCalculation, saveCompletedCalculation, saveNamedCalculation, updateNamedCalculation, api } from "../../services/api";
+import { publishTrialUpdate } from "../../services/trialEvents";
 import type { TrafficDeathDraft, TrafficInjuryDraft } from "./types/calculationDraft";
 import type { TrafficInjuryCalculationResult } from "./types/trafficInjuryResult";
 import type { TrafficDeathCalculationResult } from "./types/trafficDeathResult";
 import { isTrafficDeathCalculationResult } from "./types/trafficDeathResult";
 import type { TrafficDeathSupportPeriodsResponse } from "./types/trafficDeathSupportPeriods";
+import type { TrialInfo } from "./types/savedCalculation";
 import type { CalculationReviewSummaryResponse, ReviewFlowPhase } from "./types/calculationReviewSummary";
 import { getWizardSteps, resolveWizardStepId } from "./wizard/configs";
 import {
+  getStepValidationScope,
+  isStepBlockedByValidation,
+  resolveStepIdForMissingSection,
+} from "./wizard/validation/stepValidationScope";
+import {
+  buildFileValidationToastCopy,
+  buildValidationToastCopy,
+  focusFirstInvalidField,
+} from "./wizard/validation/validationFeedback";
+import { useToast } from "../../ui/toast";
+import { PricingSurveyAfterResultHost } from "../../components/PricingSurveyHost";
+import {
   normalizeTrafficDeathCalculationResult,
   normalizeTrafficDeathSupportSnapshot,
-  resolveDeceasedProbableLifeEndDate,
-  isStaleExclusiveDeceasedLifeEndResult,
 } from "./results/capTrafficDeathToDeceasedLifeEnd";
+import { reviewAfterTrafficDeathSupport } from "./results/trafficDeathReviewVisibility";
 import { SaveFileNameModal } from "./wizard/shared/SaveFileNameModal";
 import { UnsavedChangesSheet } from "./wizard/shared/UnsavedChangesSheet";
 import { TempDisabilityGapModal } from "./wizard/shared/TempDisabilityGapModal";
@@ -90,28 +103,6 @@ function normalizeTrafficDeathSupportResponse(
   };
 }
 
-function coerceDeceasedRemaining(personLives: unknown): {
-  years: number;
-  months: number;
-  days: number;
-} | null {
-  if (!Array.isArray(personLives)) return null;
-  const deceased = personLives.find(
-    (p) =>
-      p &&
-      typeof p === "object" &&
-      ((p as { role?: string }).role === "DECEASED" ||
-        (p as { personId?: string }).personId === "deceased")
-  ) as { remainingLifetime?: { years?: number; months?: number; days?: number } } | undefined;
-  const rem = deceased?.remainingLifetime;
-  if (!rem) return null;
-  return {
-    years: typeof rem.years === "number" ? rem.years : 0,
-    months: typeof rem.months === "number" ? rem.months : 0,
-    days: typeof rem.days === "number" ? rem.days : 0,
-  };
-}
-
 /**
  * Ana çalışma alanı — tür seçimi + türe özel wizard.
  * Parasal sonuç yok. Legacy /calculate çağrılmaz.
@@ -119,6 +110,8 @@ function coerceDeceasedRemaining(personLives: unknown): {
 export function ActuarialPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const toast = useToast();
+  const [trialInfo, setTrialInfo] = useState<TrialInfo | null>(null);
   const [phase, setPhase] = useState<"select" | "wizard">("select");
   const [draft, setDraft] = useState<CalculationDraft | null>(null);
   const [stepId, setStepId] = useState("parties");
@@ -135,6 +128,8 @@ export function ActuarialPage() {
   const [reviewSummaryLoading, setReviewSummaryLoading] = useState(false);
   const [reviewSummaryError, setReviewSummaryError] = useState<string | null>(null);
   const [reviewFlowPhase, setReviewFlowPhase] = useState<ReviewFlowPhase>("idle");
+  /** Başarılı /run sonrası fiyat anketi tetikleyicisi (0 = henüz yok) */
+  const [pricingSurveyTriggerToken, setPricingSurveyTriggerToken] = useState(0);
   const [apiMessage, setApiMessage] = useState<string | null>(null);
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -146,6 +141,8 @@ export function ActuarialPage() {
   const [calculationSaved, setCalculationSaved] = useState(false);
   const [savedListVersion, setSavedListVersion] = useState(0);
   const [currentSavedCalculationId, setCurrentSavedCalculationId] = useState<string | null>(null);
+  /** Demo kredi idempotency — çift tıklamada aynı id (state async olsa bile) */
+  const calculationIdRef = useRef<string | null>(null);
   const [savedDisplayName, setSavedDisplayName] = useState<string | null>(null);
   const [trafficDeathResultSnapshot, setTrafficDeathResultSnapshot] =
     useState<TrafficDeathSupportPeriodsResponse | null>(null);
@@ -164,91 +161,39 @@ export function ActuarialPage() {
   const cleanDraftFingerprintRef = useRef<string | null>(null);
   const leaveAfterSaveRef = useRef(false);
   const validationHighlightTimer = useRef<number | null>(null);
-  const deathResultRefreshKeyRef = useRef<string | null>(null);
+
+  const bindCalculationId = useCallback((id: string | null) => {
+    calculationIdRef.current = id;
+    setCurrentSavedCalculationId(id);
+  }, []);
+
+  /** Onay/run için stabil kimlik — yeni dosyada UUID, kayıtlı dosyada mevcut id */
+  const ensureRunCalculationId = useCallback((): string => {
+    if (calculationIdRef.current) return calculationIdRef.current;
+    if (currentSavedCalculationId) {
+      calculationIdRef.current = currentSavedCalculationId;
+      return currentSavedCalculationId;
+    }
+    const id =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `calc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    calculationIdRef.current = id;
+    setCurrentSavedCalculationId(id);
+    return id;
+  }, [currentSavedCalculationId]);
+
+  const applyTrialFromRunResponse = useCallback((res: { trial?: TrialInfo | null }) => {
+    if (res.trial) publishTrialUpdate(res.trial);
+  }, []);
 
   const handleTrafficDeathSupportResult = useCallback(
     (res: TrafficDeathSupportPeriodsResponse) => {
-      const snap = normalizeTrafficDeathSupportResponse(res);
-      setTrafficDeathResultSnapshot(snap);
-      setTrafficDeathRunResult((prev) => {
-        if (!prev) return prev;
-        const runEnd = resolveDeceasedProbableLifeEndDate(prev.personLives);
-        const snapEnd = resolveDeceasedProbableLifeEndDate(snap.personLives);
-        const lifeEndMismatch = Boolean(runEnd && snapEnd && runEnd !== snapEnd);
-        const exclusiveStale = isStaleExclusiveDeceasedLifeEndResult({
-          personLives: prev.personLives,
-          shareRatioPeriods: prev.shareRatioPeriods,
-          futurePeriods: prev.futurePeriods,
-          supportPeriods: prev.supportPeriods as Array<{ endDate: string }> | undefined,
-        });
-        if (lifeEndMismatch || exclusiveStale) {
-          deathResultRefreshKeyRef.current = null;
-          return null;
-        }
-        return prev;
-      });
+      setTrafficDeathResultSnapshot(normalizeTrafficDeathSupportResponse(res));
+      setTrafficDeathRunResult((prev) => reviewAfterTrafficDeathSupport(prev).runResult);
     },
     []
   );
-
-  /* Stale calendar life-end veya exclusive boundary (period max < lifeEnd) → fresh run */
-  useEffect(() => {
-    if (!draft || draft.calculationType !== "TRAFFIC_DEATH") return;
-    if (reviewFlowPhase !== "result") return;
-    const deathDraft = draft as TrafficDeathDraft;
-    const runEnd = resolveDeceasedProbableLifeEndDate(trafficDeathRunResult?.personLives);
-    const rem = coerceDeceasedRemaining(trafficDeathRunResult?.personLives);
-    const looksLikeStaleCalendar =
-      runEnd === "2031-02-06" &&
-      rem?.years === 6 &&
-      rem?.months === 9 &&
-      rem?.days === 22;
-    const looksLikeExclusiveBoundary =
-      trafficDeathRunResult != null &&
-      isStaleExclusiveDeceasedLifeEndResult({
-        personLives: trafficDeathRunResult.personLives,
-        shareRatioPeriods: trafficDeathRunResult.shareRatioPeriods,
-        futurePeriods: trafficDeathRunResult.futurePeriods,
-        supportPeriods: trafficDeathRunResult.supportPeriods as
-          | Array<{ endDate: string }>
-          | undefined,
-      });
-    const clearedAwaitingFresh = trafficDeathRunResult == null && trafficDeathResultSnapshot != null;
-    if (!looksLikeStaleCalendar && !looksLikeExclusiveBoundary && !clearedAwaitingFresh) return;
-    const key = [
-      deathDraft.deceased.birthDate,
-      deathDraft.deceased.deathDate,
-      deathDraft.deceased.gender,
-      deathDraft.common.calculationDate,
-      looksLikeExclusiveBoundary
-        ? "exclusive"
-        : looksLikeStaleCalendar
-          ? "stale06"
-          : "cleared",
-    ].join("|");
-    if (deathResultRefreshKeyRef.current === key) return;
-    deathResultRefreshKeyRef.current = key;
-    let cancelled = false;
-    setRunning(true);
-    requestCalculationRun(deathDraft)
-      .then((res) => {
-        if (cancelled) return;
-        if (!isTrafficDeathCalculationResult(res.result)) return;
-        const fresh = normalizeTrafficDeathCalculationResult(res.result);
-        setTrafficDeathRunResult(fresh);
-        setTrafficDeathResultSnapshot(supportSnapshotFromDeathResult(fresh));
-        setRunInputHash(res.access?.inputHash ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) deathResultRefreshKeyRef.current = null;
-      })
-      .finally(() => {
-        if (!cancelled) setRunning(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [draft, reviewFlowPhase, trafficDeathRunResult, trafficDeathResultSnapshot]);
 
   const resetTransientWizardState = useCallback(() => {
     setValidation(null);
@@ -269,6 +214,7 @@ export function ActuarialPage() {
     setRunInputHash(null);
     setReviewFlowPhase("idle");
     setCalculationSaved(false);
+    calculationIdRef.current = null;
     setCurrentSavedCalculationId(null);
     setSavedDisplayName(null);
     setTrafficDeathResultSnapshot(null);
@@ -285,7 +231,9 @@ export function ActuarialPage() {
     setReviewFlowPhase(session.reviewFlowPhase);
     setCalculationSaved(session.calculationSaved);
     if (type === "TRAFFIC_DEATH") {
-      setCurrentSavedCalculationId(session.currentSavedCalculationId ?? null);
+      const sid = session.currentSavedCalculationId ?? null;
+      calculationIdRef.current = sid;
+      setCurrentSavedCalculationId(sid);
       setSavedDisplayName(session.savedDisplayName ?? null);
       const rawRun = session.trafficDeathRunResult ?? null;
       const cappedRun = rawRun ? normalizeTrafficDeathCalculationResult(rawRun) : null;
@@ -300,12 +248,15 @@ export function ActuarialPage() {
       );
       setFileSaved(Boolean(session.currentSavedCalculationId));
     } else if (type === "TRAFFIC_INJURY") {
-      setCurrentSavedCalculationId(session.currentSavedCalculationId ?? null);
+      const sid = session.currentSavedCalculationId ?? null;
+      calculationIdRef.current = sid;
+      setCurrentSavedCalculationId(sid);
       setSavedDisplayName(session.savedDisplayName ?? null);
       setTrafficDeathResultSnapshot(null);
       setTrafficDeathRunResult(null);
       setFileSaved(Boolean(session.currentSavedCalculationId));
     } else {
+      calculationIdRef.current = null;
       setCurrentSavedCalculationId(null);
       setSavedDisplayName(null);
       setTrafficDeathResultSnapshot(null);
@@ -345,8 +296,14 @@ export function ActuarialPage() {
 
   useEffect(() => {
     fetchAuthMe()
-      .then((res) => setCanSaveCalculation(res.capabilities.canSaveCalculation))
-      .catch(() => setCanSaveCalculation(false));
+      .then((res) => {
+        setCanSaveCalculation(res.capabilities.canSaveCalculation);
+        setTrialInfo(res.trial ?? null);
+      })
+      .catch(() => {
+        setCanSaveCalculation(false);
+        setTrialInfo(null);
+      });
   }, []);
 
   /* Debounced sessionStorage taslağı */
@@ -424,6 +381,17 @@ export function ActuarialPage() {
     }
   }, [draft, stepId]);
 
+  useEffect(() => {
+    if (!draft?.calculationType || !stepId) return;
+    void api
+      .post("/analytics/events", {
+        type: "STEP_OPENED",
+        calculationType: draft.calculationType,
+        stepId,
+      })
+      .catch(() => undefined);
+  }, [draft?.calculationType, stepId]);
+
   const rememberCleanDraft = useCallback((next: CalculationDraft) => {
     const fp = draftFingerprint(next);
     cleanDraftFingerprintRef.current = fp;
@@ -466,6 +434,20 @@ export function ActuarialPage() {
   }, [draft, resetTransientWizardState]);
 
   const startType = useCallback((type: CalculationType) => {
+    if (trialInfo?.isTrial) {
+      const blocked =
+        trialInfo.blockReason === "TRIAL_EXPIRED" ||
+        trialInfo.blockReason === "TRIAL_CREDITS_EXHAUSTED" ||
+        trialInfo.creditsRemaining === 0;
+      if (blocked) {
+        const msg =
+          trialInfo.blockReason === "TRIAL_EXPIRED"
+            ? "Deneme süreniz sona erdi. Yeni hesaplama başlatılamaz."
+            : "Deneme kredileriniz tükendi. Yeni hesaplama başlatılamaz.";
+        toast.warning(msg);
+        return;
+      }
+    }
     const loaded = loadDraftForType(type);
     const next = loaded.ok ? loaded.draft : createEmptyDraft(type);
     skipNextAutoSave.current = true;
@@ -483,7 +465,7 @@ export function ActuarialPage() {
     }
     applyTypeSession(type);
     setPhase("wizard");
-  }, [adoptCleanBaseline, applyTypeSession, resetTransientWizardState]);
+  }, [adoptCleanBaseline, applyTypeSession, resetTransientWizardState, trialInfo, toast]);
 
   const handleDraftChange = useCallback((next: CalculationDraft) => {
     const normalized =
@@ -563,18 +545,31 @@ export function ActuarialPage() {
           ) {
             showTrafficValidationModal(res.errors);
             setStepId("calculationInfo");
+            focusFirstInvalidField();
+            return;
+          }
+          const copy = buildFileValidationToastCopy(res.errors?.length ?? 0);
+          toast.error(copy.title, copy.description, "validate-file");
+          const firstMissing = res.missingSections?.[0];
+          const targetStep =
+            (firstMissing
+              ? resolveStepIdForMissingSection(draft.calculationType, firstMissing)
+              : null) ?? null;
+          if (targetStep) {
+            setStepId(targetStep);
           } else {
             setStepId("review");
           }
-          setApiMessage("Eksik veya hatalı alanlar var.");
+          focusFirstInvalidField();
           return;
         }
         setStepId("review");
         fetchReviewSummary(draft);
+        toast.success("Veriler doğrulandı", "Hesaplamaya geçebilirsiniz.", "validate-ok");
       })
       .catch((err: unknown) => {
         const mapped = toApiClientError(err);
-        setApiMessage(mapped.message);
+        toast.error("Doğrulama başarısız", mapped.message, "validate-api");
         if (mapped.validation) {
           setValidation(mapped.validation);
           setFieldErrors(mapped.validation.errors ?? []);
@@ -585,10 +580,11 @@ export function ActuarialPage() {
             showTrafficValidationModal(mapped.validation.errors ?? []);
             setStepId("calculationInfo");
           }
+          focusFirstInvalidField();
         }
       })
       .finally(() => setValidating(false));
-  }, [draft, fetchReviewSummary, showTrafficValidationModal]);
+  }, [draft, fetchReviewSummary, showTrafficValidationModal, toast]);
 
   const handleRunCalculation = useCallback(() => {
     if (!draft) return;
@@ -599,8 +595,11 @@ export function ActuarialPage() {
     setRunError(null);
     setApiMessage(null);
     setStepId("review");
-    requestCalculationRun(draft)
+    const calcId = ensureRunCalculationId();
+    requestCalculationRun(draft, { calculationId: calcId })
       .then((res) => {
+        if (res.calculationId) bindCalculationId(res.calculationId);
+        applyTrialFromRunResponse(res);
         if (draft.calculationType === "TRAFFIC_DEATH") {
           if (!isTrafficDeathCalculationResult(res.result)) {
             setTrafficDeathRunResult(null);
@@ -619,12 +618,20 @@ export function ActuarialPage() {
         setReviewFlowPhase("result");
         setCalculationSaved(false);
         setSaveCalculationError(null);
+        // Sonuç ekranda; kısa gecikme ile eligibility (anket host'ta)
+        setPricingSurveyTriggerToken((n) => n + 1);
       })
       .catch((err: unknown) => {
         const mapped = toApiClientError(err);
         setRunResult(null);
         setTrafficDeathRunResult(null);
-        if (mapped.status === 402) {
+        if (
+          mapped.status === 403 &&
+          (mapped.code === "TRIAL_CREDITS_EXHAUSTED" || mapped.code === "TRIAL_EXPIRED")
+        ) {
+          setRunError(formatCalculationAccessError(mapped));
+          setReviewFlowPhase("inputReview");
+        } else if (mapped.status === 402) {
           setRunError(formatCalculationAccessError(mapped));
         } else if (mapped.status === 422 && mapped.validation) {
           setValidation(mapped.validation);
@@ -645,7 +652,14 @@ export function ActuarialPage() {
         }
       })
       .finally(() => setRunning(false));
-  }, [draft, reviewSummary, showTrafficValidationModal]);
+  }, [
+    draft,
+    reviewSummary,
+    showTrafficValidationModal,
+    ensureRunCalculationId,
+    bindCalculationId,
+    applyTrialFromRunResponse,
+  ]);
 
   /** Onay sonrası run — ileride tek hesap ödeme kapısı buraya eklenir */
   const handleConfirmAndRun = useCallback(() => {
@@ -704,10 +718,18 @@ export function ActuarialPage() {
     if (!draft || draft.calculationType !== "TRAFFIC_INJURY" || !runResult || !runInputHash) return;
     setSavingCalculation(true);
     setSaveCalculationError(null);
-    saveCompletedCalculation(draft, runInputHash)
+    const existingId = calculationIdRef.current ?? currentSavedCalculationId;
+    const savePromise = existingId
+      ? updateNamedCalculation(existingId, {
+          draft,
+          displayName: savedDisplayName?.trim() || "Kaydedilmiş hesap",
+          resultSnapshot: runResult,
+        })
+      : saveCompletedCalculation(draft, runInputHash);
+    savePromise
       .then((res) => {
         setCalculationSaved(true);
-        setCurrentSavedCalculationId(res.item.id);
+        bindCalculationId(res.item.id);
         setSavedListVersion((v) => v + 1);
       })
       .catch((err: unknown) => {
@@ -725,7 +747,7 @@ export function ActuarialPage() {
         }
       })
       .finally(() => setSavingCalculation(false));
-  }, [draft, runResult, runInputHash]);
+  }, [draft, runResult, runInputHash, currentSavedCalculationId, savedDisplayName, bindCalculationId]);
 
   const performSaveNamedFile = useCallback(
     async (displayName: string): Promise<boolean> => {
@@ -760,7 +782,12 @@ export function ActuarialPage() {
         const shouldLeave = leaveAfterSaveRef.current;
         leaveAfterSaveRef.current = false;
         if (shouldLeave) abandonCurrentFile();
-        setApiMessage(isUpdate ? "Değişiklikler kaydedildi." : "Dosya kaydedildi.");
+        setApiMessage(null);
+        toast.success(
+          isUpdate ? "Değişiklikler kaydedildi" : "Dosya kaydedildi",
+          undefined,
+          isUpdate ? "file-updated" : "file-saved"
+        );
         return true;
       } catch (err: unknown) {
         const mapped = toApiClientError(err);
@@ -783,6 +810,7 @@ export function ActuarialPage() {
       saveFileModalOpen,
       rememberCleanDraft,
       abandonCurrentFile,
+      toast,
     ]
   );
 
@@ -819,6 +847,7 @@ export function ActuarialPage() {
             : steps[0]?.id || "deceased";
         setDraft(snapshot);
         setCurrentSavedCalculationId(item.id);
+        calculationIdRef.current = item.id;
         setSavedDisplayName(item.displayName ?? item.title ?? null);
         const savedResult = item.resultSnapshotJson;
         const resolvedStep = resolveWizardStepId("TRAFFIC_DEATH", restoredStep);
@@ -849,7 +878,9 @@ export function ActuarialPage() {
         if (hadCompletedResult || (savedResult && typeof savedResult === "object")) {
           setRunning(true);
           try {
-            const res = await requestCalculationRun(snapshot);
+            const res = await requestCalculationRun(snapshot, { calculationId: item.id });
+            if (res.calculationId) bindCalculationId(res.calculationId);
+            applyTrialFromRunResponse(res);
             if (isTrafficDeathCalculationResult(res.result)) {
               const fresh = normalizeTrafficDeathCalculationResult(res.result);
               setTrafficDeathRunResult(fresh);
@@ -1072,20 +1103,38 @@ export function ActuarialPage() {
 
   const handleBeforeStepAdvance = useCallback(
     async (fromStepId: string, toStepId: string) => {
-      if (!draft || draft.calculationType !== "TRAFFIC_INJURY" || fromStepId !== "calculationInfo") {
-        return true;
-      }
+      if (!draft) return true;
       const steps = getWizardSteps(draft.calculationType);
       const fromIndex = steps.findIndex((s) => s.id === fromStepId);
       const toIndex = steps.findIndex((s) => s.id === toStepId);
       if (toIndex <= fromIndex) return true;
+      if (fromStepId === "review") return true;
 
       try {
         const res = await validateCalculationDraft(draft);
         setValidation(res);
         setFieldErrors(res.errors ?? []);
-        if (resolveTrafficValidationModal(res.errors)) {
+
+        if (
+          draft.calculationType === "TRAFFIC_INJURY" &&
+          fromStepId === "calculationInfo" &&
+          resolveTrafficValidationModal(res.errors)
+        ) {
           showTrafficValidationModal(res.errors);
+          focusFirstInvalidField();
+          return false;
+        }
+
+        const scope = getStepValidationScope(draft.calculationType, fromStepId);
+        const { blocked, stepErrors } = isStepBlockedByValidation(
+          res.errors ?? [],
+          res.missingSections ?? [],
+          scope
+        );
+        if (blocked) {
+          const copy = buildValidationToastCopy(stepErrors);
+          toast.error(copy.title, copy.description, `step-block:${fromStepId}`);
+          focusFirstInvalidField();
           return false;
         }
       } catch {
@@ -1093,7 +1142,7 @@ export function ActuarialPage() {
       }
       return true;
     },
-    [draft, showTrafficValidationModal]
+    [draft, showTrafficValidationModal, toast]
   );
 
   const persistWizardSession = useCallback(() => {
@@ -1141,8 +1190,8 @@ export function ActuarialPage() {
     <div
       className={
         isDashboardLayout
-          ? "min-h-[calc(100vh-0px)] bg-[#F5F7FA] pb-5"
-          : "bg-slate-100 pb-3"
+          ? "min-h-[calc(100vh-0px)] bg-[#F4F7FB] pb-5"
+          : "min-h-[calc(100vh-0px)] bg-[#F4F7FB] pb-3"
       }
     >
       <div className={`app-workspace ${isDashboardLayout ? "dashboard-workspace py-3 sm:py-4" : "py-3 sm:py-5"}`}>
@@ -1286,6 +1335,7 @@ export function ActuarialPage() {
               setUnsavedPromptOpen(false);
             }}
           />
+          <PricingSurveyAfterResultHost triggerToken={pricingSurveyTriggerToken} />
           </>
         )}
       </div>
