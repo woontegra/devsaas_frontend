@@ -29,7 +29,8 @@ import {
   saveTypeSession,
   TRAFFIC_DEATH_LIFE_END_EPOCH,
 } from "./typeSessionStorage";
-import { toApiClientError, validateCalculationDraft, requestCalculationRun, requestCalculationReviewSummary, requestTrafficInjuryWordReport, requestTrafficDeathReport, downloadBlob, formatCalculationAccessError, fetchAuthMe, getSavedCalculation, saveCompletedCalculation, saveNamedCalculation, updateNamedCalculation, api } from "../../services/api";
+import { toApiClientError, validateCalculationDraft, requestCalculationRun, requestCalculationReviewSummary, requestTrafficInjuryWordReport, requestTrafficDeathReport, downloadBlob, formatCalculationAccessError, fetchAuthMe, getSavedCalculation, saveNamedCalculation, updateNamedCalculation, api } from "../../services/api";
+import { resolvePersistedSavedCalculationId } from "./resolvePersistedSavedCalculationId";
 import { publishTrialUpdate } from "../../services/trialEvents";
 import type { TrafficDeathDraft, TrafficInjuryDraft } from "./types/calculationDraft";
 import type { TrafficInjuryCalculationResult } from "./types/trafficInjuryResult";
@@ -162,26 +163,29 @@ export function ActuarialPage() {
   const leaveAfterSaveRef = useRef(false);
   const validationHighlightTimer = useRef<number | null>(null);
 
-  const bindCalculationId = useCallback((id: string | null) => {
+  /** Yalnız run/demo kredi idempotency — SavedCalculation id'sine yazmaz */
+  const bindRunCalculationId = useCallback((id: string | null) => {
     calculationIdRef.current = id;
-    setCurrentSavedCalculationId(id);
   }, []);
 
-  /** Onay/run için stabil kimlik — yeni dosyada UUID, kayıtlı dosyada mevcut id */
+  /** Onay/run için stabil kimlik — yeni dosyada UUID; kalıcı kayıt id'sini kirletmez */
   const ensureRunCalculationId = useCallback((): string => {
     if (calculationIdRef.current) return calculationIdRef.current;
-    if (currentSavedCalculationId) {
-      calculationIdRef.current = currentSavedCalculationId;
-      return currentSavedCalculationId;
+    const persistedId = resolvePersistedSavedCalculationId({
+      currentSavedCalculationId,
+      savedDisplayName,
+    });
+    if (persistedId) {
+      calculationIdRef.current = persistedId;
+      return persistedId;
     }
     const id =
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `calc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     calculationIdRef.current = id;
-    setCurrentSavedCalculationId(id);
     return id;
-  }, [currentSavedCalculationId]);
+  }, [currentSavedCalculationId, savedDisplayName]);
 
   const applyTrialFromRunResponse = useCallback((res: { trial?: TrialInfo | null }) => {
     if (res.trial) publishTrialUpdate(res.trial);
@@ -230,31 +234,36 @@ export function ActuarialPage() {
     setRunInputHash(session.runInputHash);
     setReviewFlowPhase(session.reviewFlowPhase);
     setCalculationSaved(session.calculationSaved);
-    if (type === "TRAFFIC_DEATH") {
-      const sid = session.currentSavedCalculationId ?? null;
-      calculationIdRef.current = sid;
-      setCurrentSavedCalculationId(sid);
-      setSavedDisplayName(session.savedDisplayName ?? null);
-      const rawRun = session.trafficDeathRunResult ?? null;
-      const cappedRun = rawRun ? normalizeTrafficDeathCalculationResult(rawRun) : null;
-      const rawSnap = session.trafficDeathResultSnapshot ?? null;
-      setTrafficDeathRunResult(cappedRun);
-      setTrafficDeathResultSnapshot(
-        cappedRun
-          ? supportSnapshotFromDeathResult(cappedRun)
-          : rawSnap
-            ? normalizeTrafficDeathSupportResponse(rawSnap)
-            : null
-      );
-      setFileSaved(Boolean(session.currentSavedCalculationId));
-    } else if (type === "TRAFFIC_INJURY") {
-      const sid = session.currentSavedCalculationId ?? null;
-      calculationIdRef.current = sid;
-      setCurrentSavedCalculationId(sid);
-      setSavedDisplayName(session.savedDisplayName ?? null);
-      setTrafficDeathResultSnapshot(null);
-      setTrafficDeathRunResult(null);
-      setFileSaved(Boolean(session.currentSavedCalculationId));
+    if (type === "TRAFFIC_DEATH" || type === "TRAFFIC_INJURY") {
+      const displayName = session.savedDisplayName ?? null;
+      const persistedId = resolvePersistedSavedCalculationId({
+        currentSavedCalculationId: session.currentSavedCalculationId,
+        savedDisplayName: displayName,
+      });
+      // Eski oturumlarda run UUID currentSavedCalculationId'ye yazılmış olabilir; ad yoksa run id say.
+      const runId =
+        session.runCalculationId ??
+        (persistedId ? persistedId : session.currentSavedCalculationId ?? null);
+      calculationIdRef.current = runId;
+      setCurrentSavedCalculationId(persistedId);
+      setSavedDisplayName(displayName);
+      setFileSaved(Boolean(persistedId));
+      if (type === "TRAFFIC_DEATH") {
+        const rawRun = session.trafficDeathRunResult ?? null;
+        const cappedRun = rawRun ? normalizeTrafficDeathCalculationResult(rawRun) : null;
+        const rawSnap = session.trafficDeathResultSnapshot ?? null;
+        setTrafficDeathRunResult(cappedRun);
+        setTrafficDeathResultSnapshot(
+          cappedRun
+            ? supportSnapshotFromDeathResult(cappedRun)
+            : rawSnap
+              ? normalizeTrafficDeathSupportResponse(rawSnap)
+              : null
+        );
+      } else {
+        setTrafficDeathResultSnapshot(null);
+        setTrafficDeathRunResult(null);
+      }
     } else {
       calculationIdRef.current = null;
       setCurrentSavedCalculationId(null);
@@ -338,11 +347,18 @@ export function ActuarialPage() {
       runResult,
       currentSavedCalculationId:
         draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY"
-          ? currentSavedCalculationId
+          ? resolvePersistedSavedCalculationId({
+              currentSavedCalculationId,
+              savedDisplayName,
+            })
           : null,
       savedDisplayName:
         draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY"
           ? savedDisplayName
+          : null,
+      runCalculationId:
+        draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY"
+          ? calculationIdRef.current
           : null,
       trafficDeathResultSnapshot:
         draft.calculationType === "TRAFFIC_DEATH" ? trafficDeathResultSnapshot : null,
@@ -598,7 +614,7 @@ export function ActuarialPage() {
     const calcId = ensureRunCalculationId();
     requestCalculationRun(draft, { calculationId: calcId })
       .then((res) => {
-        if (res.calculationId) bindCalculationId(res.calculationId);
+        if (res.calculationId) bindRunCalculationId(res.calculationId);
         applyTrialFromRunResponse(res);
         if (draft.calculationType === "TRAFFIC_DEATH") {
           if (!isTrafficDeathCalculationResult(res.result)) {
@@ -657,7 +673,7 @@ export function ActuarialPage() {
     reviewSummary,
     showTrafficValidationModal,
     ensureRunCalculationId,
-    bindCalculationId,
+    bindRunCalculationId,
     applyTrialFromRunResponse,
   ]);
 
@@ -716,38 +732,58 @@ export function ActuarialPage() {
 
   const handleSaveCalculation = useCallback(() => {
     if (!draft || draft.calculationType !== "TRAFFIC_INJURY" || !runResult || !runInputHash) return;
-    setSavingCalculation(true);
+    if (!canSaveCalculation) {
+      setSaveCalculationError(
+        "Kalıcı hesap kaydı yalnızca abonelik kullanıcıları içindir."
+      );
+      return;
+    }
     setSaveCalculationError(null);
-    const existingId = calculationIdRef.current ?? currentSavedCalculationId;
-    const savePromise = existingId
-      ? updateNamedCalculation(existingId, {
-          draft,
-          displayName: savedDisplayName?.trim() || "Kaydedilmiş hesap",
-          resultSnapshot: runResult,
+    const persistedId = resolvePersistedSavedCalculationId({
+      currentSavedCalculationId,
+      savedDisplayName,
+    });
+    if (persistedId && savedDisplayName?.trim()) {
+      setSavingCalculation(true);
+      updateNamedCalculation(persistedId, {
+        draft,
+        displayName: savedDisplayName.trim(),
+        resultSnapshot: runResult,
+      })
+        .then((res) => {
+          setCalculationSaved(true);
+          setFileSaved(true);
+          setCurrentSavedCalculationId(res.item.id);
+          calculationIdRef.current = res.item.id;
+          setSavedListVersion((v) => v + 1);
         })
-      : saveCompletedCalculation(draft, runInputHash);
-    savePromise
-      .then((res) => {
-        setCalculationSaved(true);
-        bindCalculationId(res.item.id);
-        setSavedListVersion((v) => v + 1);
-      })
-      .catch((err: unknown) => {
-        const mapped = toApiClientError(err);
-        if (mapped.code === "SAVE_NOT_PERMITTED") {
-          setSaveCalculationError(
-            mapped.message || "Kalıcı hesap kaydı yalnızca abonelik kullanıcıları içindir."
-          );
-        } else if (mapped.code === "INPUT_HASH_MISMATCH") {
-          setSaveCalculationError(
-            "Hesap girdisi değişmiş. Sonucu kaydetmeden önce hesaplamayı yeniden çalıştırın."
-          );
-        } else {
-          setSaveCalculationError(mapped.message);
-        }
-      })
-      .finally(() => setSavingCalculation(false));
-  }, [draft, runResult, runInputHash, currentSavedCalculationId, savedDisplayName, bindCalculationId]);
+        .catch((err: unknown) => {
+          const mapped = toApiClientError(err);
+          if (mapped.code === "SAVE_NOT_PERMITTED") {
+            setSaveCalculationError(
+              mapped.message || "Kalıcı hesap kaydı yalnızca abonelik kullanıcıları içindir."
+            );
+          } else if (mapped.code === "INPUT_HASH_MISMATCH") {
+            setSaveCalculationError(
+              "Hesap girdisi değişmiş. Sonucu kaydetmeden önce hesaplamayı yeniden çalıştırın."
+            );
+          } else {
+            setSaveCalculationError(mapped.message);
+          }
+        })
+        .finally(() => setSavingCalculation(false));
+      return;
+    }
+    // Yeni hesap — Ölüm "Dosyayı Kaydet" gibi ad sor, POST ile oluştur
+    setSaveFileModalOpen(true);
+  }, [
+    draft,
+    runResult,
+    runInputHash,
+    canSaveCalculation,
+    currentSavedCalculationId,
+    savedDisplayName,
+  ]);
 
   const performSaveNamedFile = useCallback(
     async (displayName: string): Promise<boolean> => {
@@ -759,7 +795,12 @@ export function ActuarialPage() {
       }
       setSavingFile(true);
       setSaveFileError(null);
-      const isUpdate = Boolean(currentSavedCalculationId);
+      // Güncelleme yalnız gerçek DB kaydı + mevcut dosya adı varken; aksi halde POST
+      const persistedId = resolvePersistedSavedCalculationId({
+        currentSavedCalculationId,
+        savedDisplayName,
+      });
+      const isUpdate = Boolean(persistedId);
       try {
         const resultSnapshot =
           draft.calculationType === "TRAFFIC_DEATH"
@@ -770,12 +811,17 @@ export function ActuarialPage() {
           displayName,
           resultSnapshot,
         };
-        const res = currentSavedCalculationId
-          ? await updateNamedCalculation(currentSavedCalculationId, payload)
+        const res = persistedId
+          ? await updateNamedCalculation(persistedId, payload)
           : await saveNamedCalculation(payload);
         setCurrentSavedCalculationId(res.item.id);
         setSavedDisplayName(displayName);
+        calculationIdRef.current = res.item.id;
         setFileSaved(true);
+        if (draft.calculationType === "TRAFFIC_INJURY" && runResult) {
+          setCalculationSaved(true);
+          setSaveCalculationError(null);
+        }
         setSavedListVersion((v) => v + 1);
         setSaveFileModalOpen(false);
         rememberCleanDraft(draft);
@@ -793,6 +839,9 @@ export function ActuarialPage() {
         const mapped = toApiClientError(err);
         leaveAfterSaveRef.current = false;
         setSaveFileError(mapped.message);
+        if (draft.calculationType === "TRAFFIC_INJURY") {
+          setSaveCalculationError(mapped.message);
+        }
         if (!saveFileModalOpen && isUpdate) {
           setApiMessage(mapped.message);
         }
@@ -804,6 +853,7 @@ export function ActuarialPage() {
     [
       draft,
       currentSavedCalculationId,
+      savedDisplayName,
       trafficDeathResultSnapshot,
       trafficDeathRunResult,
       runResult,
@@ -822,7 +872,11 @@ export function ActuarialPage() {
     ) {
       return;
     }
-    if (currentSavedCalculationId && savedDisplayName) {
+    const persistedId = resolvePersistedSavedCalculationId({
+      currentSavedCalculationId,
+      savedDisplayName,
+    });
+    if (persistedId && savedDisplayName) {
       void performSaveNamedFile(savedDisplayName);
       return;
     }
@@ -870,6 +924,7 @@ export function ActuarialPage() {
           runResult: null,
           currentSavedCalculationId: item.id,
           savedDisplayName: item.displayName ?? item.title ?? null,
+          runCalculationId: item.id,
           trafficDeathResultSnapshot: null,
           trafficDeathRunResult: null,
           trafficDeathLifeEndEpoch: null,
@@ -879,7 +934,7 @@ export function ActuarialPage() {
           setRunning(true);
           try {
             const res = await requestCalculationRun(snapshot, { calculationId: item.id });
-            if (res.calculationId) bindCalculationId(res.calculationId);
+            if (res.calculationId) bindRunCalculationId(res.calculationId);
             applyTrialFromRunResponse(res);
             if (isTrafficDeathCalculationResult(res.result)) {
               const fresh = normalizeTrafficDeathCalculationResult(res.result);
@@ -895,6 +950,7 @@ export function ActuarialPage() {
                 runResult: null,
                 currentSavedCalculationId: item.id,
                 savedDisplayName: item.displayName ?? item.title ?? null,
+                runCalculationId: item.id,
                 trafficDeathResultSnapshot: supportSnapshotFromDeathResult(fresh),
                 trafficDeathRunResult: fresh,
                 trafficDeathLifeEndEpoch: TRAFFIC_DEATH_LIFE_END_EPOCH,
@@ -931,6 +987,7 @@ export function ActuarialPage() {
 
       const injuryDisplayName = item.displayName ?? item.title ?? null;
       setCurrentSavedCalculationId(item.id);
+      calculationIdRef.current = item.id;
       setSavedDisplayName(injuryDisplayName);
       setFileSaved(true);
 
@@ -952,6 +1009,7 @@ export function ActuarialPage() {
           runResult: item.resultSnapshotJson as TrafficInjuryCalculationResult,
           currentSavedCalculationId: item.id,
           savedDisplayName: injuryDisplayName,
+          runCalculationId: item.id,
         });
         setDraftSaveStatus("saved");
         return;
@@ -978,12 +1036,13 @@ export function ActuarialPage() {
         runResult: sameSavedSession ? session.runResult : null,
         currentSavedCalculationId: item.id,
         savedDisplayName: injuryDisplayName,
+        runCalculationId: item.id,
       });
       setDraftSaveStatus("saved");
     } catch (err: unknown) {
       setApiMessage(toApiClientError(err).message);
     }
-  }, [resetTransientWizardState]);
+  }, [resetTransientWizardState, rememberCleanDraft, bindRunCalculationId, applyTrialFromRunResponse]);
 
   useEffect(() => {
     const openSavedId = (location.state as { openSavedId?: string } | null)?.openSavedId;
@@ -1041,6 +1100,7 @@ export function ActuarialPage() {
         runResult,
         currentSavedCalculationId: null,
         savedDisplayName: null,
+        runCalculationId: null,
         trafficDeathResultSnapshot: draft.calculationType === "TRAFFIC_DEATH" ? null : undefined,
         trafficDeathRunResult: draft.calculationType === "TRAFFIC_DEATH" ? null : undefined,
       });
@@ -1083,7 +1143,11 @@ export function ActuarialPage() {
       return;
     }
     leaveAfterSaveRef.current = true;
-    if (currentSavedCalculationId && savedDisplayName) {
+    const persistedId = resolvePersistedSavedCalculationId({
+      currentSavedCalculationId,
+      savedDisplayName,
+    });
+    if (persistedId && savedDisplayName) {
       void performSaveNamedFile(savedDisplayName);
       return;
     }
@@ -1155,11 +1219,18 @@ export function ActuarialPage() {
       runResult,
       currentSavedCalculationId:
         draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY"
-          ? currentSavedCalculationId
+          ? resolvePersistedSavedCalculationId({
+              currentSavedCalculationId,
+              savedDisplayName,
+            })
           : null,
       savedDisplayName:
         draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY"
           ? savedDisplayName
+          : null,
+      runCalculationId:
+        draft.calculationType === "TRAFFIC_DEATH" || draft.calculationType === "TRAFFIC_INJURY"
+          ? calculationIdRef.current
           : null,
       trafficDeathResultSnapshot:
         draft.calculationType === "TRAFFIC_DEATH" ? trafficDeathResultSnapshot : null,

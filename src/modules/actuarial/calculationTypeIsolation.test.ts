@@ -214,4 +214,18 @@ describe("calculation type isolation", () => {
     expect(deathSession.currentSavedCalculationId).toBeNull();
     expect(deathSession.savedDisplayName).toBeNull();
   });
+
+  it("F3: runCalculationId is stored separately from persisted SavedCalculation id", () => {
+    saveTypeSession("TRAFFIC_INJURY", {
+      ...defaultTypeSession("TRAFFIC_INJURY"),
+      currentSavedCalculationId: null,
+      savedDisplayName: null,
+      runCalculationId: "run-uuid-demo-credit",
+    });
+
+    const injurySession = loadTypeSession("TRAFFIC_INJURY");
+    expect(injurySession.runCalculationId).toBe("run-uuid-demo-credit");
+    expect(injurySession.currentSavedCalculationId).toBeNull();
+    expect(injurySession.savedDisplayName).toBeNull();
+  });
 });

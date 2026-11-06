@@ -30,9 +30,11 @@ export interface TypeSessionSnapshot {
   reviewFlowPhase: ReviewFlowPhase;
   calculationSaved: boolean;
   runResult: TrafficInjuryCalculationResult | null;
-  /** Kalıcı kayıt id — TRAFFIC_INJURY / TRAFFIC_DEATH */
+  /** Kalıcı SavedCalculation id — yalnız gerçek DB kaydı */
   currentSavedCalculationId?: string | null;
   savedDisplayName?: string | null;
+  /** Run/demo kredi idempotency id — SavedCalculation id'si olmak zorunda değil */
+  runCalculationId?: string | null;
   trafficDeathResultSnapshot?: TrafficDeathSupportPeriodsResponse | null;
   trafficDeathRunResult?: TrafficDeathCalculationResult | null;
   /** actuarial30 epoch — yoksa cached death result güvenilmez */
@@ -53,6 +55,7 @@ export function defaultTypeSession(type: import("./types/calculationDraft").Calc
     runResult: null,
     currentSavedCalculationId: null,
     savedDisplayName: null,
+    runCalculationId: null,
     trafficDeathResultSnapshot: null,
     trafficDeathRunResult: null,
     trafficDeathLifeEndEpoch: null,
@@ -90,6 +93,8 @@ export function loadTypeSession(type: import("./types/calculationDraft").Calcula
           : null;
       base.savedDisplayName =
         typeof parsed.savedDisplayName === "string" ? parsed.savedDisplayName : null;
+      base.runCalculationId =
+        typeof parsed.runCalculationId === "string" ? parsed.runCalculationId : null;
     }
     if (type === "TRAFFIC_DEATH") {
       const epochOk = parsed.trafficDeathLifeEndEpoch === TRAFFIC_DEATH_LIFE_END_EPOCH;
@@ -158,6 +163,7 @@ export function saveTypeSession(
     if (type === "TRAFFIC_DEATH" || type === "TRAFFIC_INJURY") {
       payload.currentSavedCalculationId = snapshot.currentSavedCalculationId ?? null;
       payload.savedDisplayName = snapshot.savedDisplayName ?? null;
+      payload.runCalculationId = snapshot.runCalculationId ?? null;
     }
     if (type === "TRAFFIC_DEATH") {
       payload.trafficDeathResultSnapshot = snapshot.trafficDeathResultSnapshot ?? null;
