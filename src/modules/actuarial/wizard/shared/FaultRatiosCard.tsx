@@ -40,7 +40,8 @@ export function FaultRatiosCard({
                   min={0}
                   max={100}
                   inputMode="decimal"
-                  value={row.value}
+                  placeholder="0"
+                  value={row.value === 0 ? "" : row.value}
                   onChange={(e) => row.onChange(Number(e.target.value))}
                 />
                 <span className="text-[13px] text-slate-500">%</span>
@@ -60,7 +61,8 @@ export function FaultRatiosCard({
               min={0}
               max={100}
               inputMode="decimal"
-              value={externalFault}
+              placeholder="0"
+              value={externalFault === 0 ? "" : externalFault}
               onChange={(e) => onExternalFaultChange(Number(e.target.value))}
             />
             <span className="text-[13px] text-slate-500">%</span>

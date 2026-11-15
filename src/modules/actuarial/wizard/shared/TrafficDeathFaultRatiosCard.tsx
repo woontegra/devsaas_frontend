@@ -25,7 +25,8 @@ function FaultPercentInput({
           inputMode="decimal"
           aria-label={`${label} kusur oranı`}
           disabled={disabled}
-          value={disabled ? 0 : value}
+          placeholder="0"
+          value={disabled || value === 0 ? "" : value}
           onChange={(e) => onChange?.(Number(e.target.value))}
           style={{ textAlign: "right" }}
         />
