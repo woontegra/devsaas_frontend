@@ -429,15 +429,49 @@ export function TrafficInjuryResultView({
       {/* E) TOPLAM VE İNDİRİMLER */}
       <FormSection title="Toplam ve İndirimler">
         <div className="space-y-0.5">
-          <TotalRow label="Geçici İG" value={formatMoney(result.temporaryIncapacityTotal)} />
-          <TotalRow label="İşlemiş dönem" value={formatMoney(result.processedPermanentTotal)} />
-          <TotalRow label="İşleyecek dönem" value={formatMoney(result.futurePermanentTotal)} />
-          <TotalRow label="Toplam zarar" value={formatMoney(result.totalDamageBeforeFault)} highlight />
-          <TotalRow
-            label={`Davacı kusur indirimi (${formatPercent(result.injuredFaultRate)})`}
-            value={`− ${formatMoney(result.faultDeductionAmount)}`}
-          />
-          <TotalRow label="Kusur sonrası zarar" value={formatMoney(result.totalAfterFault)} />
+          {result.temporaryIncapacityAfterFault != null && result.permanentAfterFault != null ? (
+            <>
+              <TotalRow label="Geçici İG toplamı" value={formatMoney(result.temporaryIncapacityTotal)} />
+              <TotalRow
+                label={`Davacı kusur indirimi (${formatPercent(result.injuredFaultRate)})`}
+                value={`− ${formatMoney(result.temporaryIncapacityFaultDeduction ?? 0)}`}
+              />
+              <TotalRow
+                label="Kusur sonrası geçici İG"
+                value={formatMoney(result.temporaryIncapacityAfterFault)}
+                highlight
+              />
+              <TotalRow label="İşlemiş dönem" value={formatMoney(result.processedPermanentTotal)} />
+              <TotalRow label="İşleyecek dönem" value={formatMoney(result.futurePermanentTotal)} />
+              <TotalRow label="Maluliyet toplamı" value={formatMoney(result.permanentTotal ?? 0)} />
+              <TotalRow
+                label={`Davacı kusur indirimi (${formatPercent(result.injuredFaultRate)})`}
+                value={`− ${formatMoney(result.permanentFaultDeduction ?? 0)}`}
+              />
+              <TotalRow
+                label="Kusur sonrası maluliyet"
+                value={formatMoney(result.permanentAfterFault)}
+                highlight
+              />
+              <TotalRow
+                label="Kusur sonrası toplam zarar"
+                value={formatMoney(result.totalAfterFault)}
+                highlight
+              />
+            </>
+          ) : (
+            <>
+              <TotalRow label="Geçici İG" value={formatMoney(result.temporaryIncapacityTotal)} />
+              <TotalRow label="İşlemiş dönem" value={formatMoney(result.processedPermanentTotal)} />
+              <TotalRow label="İşleyecek dönem" value={formatMoney(result.futurePermanentTotal)} />
+              <TotalRow label="Toplam zarar" value={formatMoney(result.totalDamageBeforeFault)} highlight />
+              <TotalRow
+                label={`Davacı kusur indirimi (${formatPercent(result.injuredFaultRate)})`}
+                value={`− ${formatMoney(result.faultDeductionAmount)}`}
+              />
+              <TotalRow label="Kusur sonrası zarar" value={formatMoney(result.totalAfterFault)} />
+            </>
+          )}
           <TotalRow label="Toplam PSD" value={formatMoney(result.psdTotal)} />
           <TotalRow
             label="Mahsup edilebilir PSD (kusur sonrası)"

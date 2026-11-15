@@ -84,6 +84,12 @@ export interface TrafficInjuryCalculationResult {
   injuredFaultRate: number;
   faultDeductionAmount: number;
   totalAfterFault: number;
+  /** Ayrı kusur indirimi alanları — eski kayıtlarda yoktur */
+  temporaryIncapacityFaultDeduction?: number;
+  temporaryIncapacityAfterFault?: number;
+  permanentTotal?: number;
+  permanentFaultDeduction?: number;
+  permanentAfterFault?: number;
   psdTotal: number;
   psdDeductibleAfterFault: number;
   totalAfterPSD: number;
